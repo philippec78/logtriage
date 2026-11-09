@@ -19,7 +19,12 @@
         <div><span id="collection-status">Chargement de la collecte…</span><button id="refresh" type="button">↻ Actualiser</button></div>
       </div>
       <div class="client-toolbar"><label for="client-filter">Client</label><select id="client-filter"><option value="*">Tous les clients</option></select>
-        <label for="type-filter">Type de contrôle</label><select id="type-filter"><option value="*">Tous les types</option></select></div>
+      </div>
+      <section id="client-services" aria-labelledby="services-title" hidden>
+        <h2 id="services-title">Services du client</h2>
+        <div id="service-list" role="group" aria-labelledby="services-title"></div>
+      </section>
+      <div class="client-toolbar"><label for="type-filter">Type de contrôle</label><select id="type-filter"><option value="*">Tous les types</option></select></div>
       <div class="overview-grid">
         <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
           <div class="dash-surface overview-body"><div id="status-totals" class="status-totals"></div>

@@ -27,3 +27,24 @@ def check_type(key):
     if parts[0] == "pbs" and len(parts) > 2:
         return PBS_TYPES.get(parts[2], TYPES["pbs"])
     return TYPES.get(parts[0], "Autre contrôle")
+
+
+SERVICE_FAMILIES = {
+    "Sauvegardes": ("synology-backup", "synology-abb", "synology-abb-connectivity", "synology-integrity",
+                    "synology-restore", "synology-replication", "synology-snapshot"),
+    "Proxmox": ("pve", "pbs", "pve-ha", "pmg"),
+    "Alertes de sécurité": ("account-security", "synology-firewall", "wazuh", "openvas"),
+    "Stockage": ("synology-disks", "synology-capacity"),
+    "Disponibilité": ("uptime", "synology-ha", "synology-cms"),
+    "Maintenance Synology": ("synology-scheduler", "synology-log", "synology-dsm-update"),
+    "Onduleurs": ("ups", "ups-monitoring", "ups-snmp"),
+    "Impression": ("printer",),
+    "Intégration continue": ("github-actions",),
+    "Contrôles personnalisés": ("custom",),
+}
+SERVICE_BY_FAMILY = {family: service for service, families in SERVICE_FAMILIES.items() for family in families}
+
+
+def check_service(key):
+    family = key.removeprefix("missing|").partition("|")[0]
+    return SERVICE_BY_FAMILY.get(family, "Autres services")

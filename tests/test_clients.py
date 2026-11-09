@@ -74,3 +74,15 @@ class ClientTests(unittest.TestCase):
             m['observations'] = [{'key':'wazuh|nas|42', 'summary':'Détection'}]
         observations = derive_state(history)[1].values()
         self.assertEqual({o['client']:o['reports_seen'] for o in observations}, {'one.ch':1, 'two.ch':1})
+
+    def test_services_follow_the_check_family_for_each_client_and_missing_report(self):
+        from logtriage.check_types import TYPES, check_service
+        self.assertTrue(all(check_service(key) != 'Autres services' for key in TYPES))
+        self.assertEqual(check_service('missing|pbs|nas|verification|homes'), 'Proxmox')
+        self.assertEqual(check_service('custom|pbs|backup'), 'Contrôles personnalisés')
+        history = [event(domain, 0, 'failure') for domain in ('one.ch', 'two.ch')]
+        history[0]['task_events'][0]['task_key'] = 'synology-backup|nas|homes'
+        history[1]['task_events'][0]['task_key'] = 'account-security|nas|homes'
+        rows = checks(derive_state(history)[0].values(), history, NOW, ZONE)
+        self.assertEqual({r['client']:r['service'] for r in rows},
+                         {'one.ch':'Sauvegardes', 'two.ch':'Alertes de sécurité'})

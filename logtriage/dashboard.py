@@ -1,6 +1,6 @@
 """Lecture compacte des contrôles, de leur dernier signal et de leur historique du jour."""
 from collections import defaultdict, deque
-from .check_types import check_type
+from .check_types import check_service, check_type
 from .clients import message_client
 from .digest import day_bounds
 
@@ -25,7 +25,7 @@ def checks(tasks, messages, moment, tz):
         parts = t["key"].removeprefix("missing|").split("|")
         host = parts[1] if len(parts) > 1 else "Source non identifiée"
         name = " · ".join(parts[2:]) or host
-        rows.append({"client": t.get("client", ""), "family": parts[0], "check_type": check_type(t["key"]), "host": host, "name": ("Rapport attendu · " if missing else "") + name,
+        rows.append({"client": t.get("client", ""), "family": parts[0], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "host": host, "name": ("Rapport attendu · " if missing else "") + name,
                      "state": state, "missing": missing, "date": stamp,
                      "history": list(history[t["scope"], t["key"], t.get("client", "")])})
     return sorted(rows, key=lambda r: (r["host"].casefold(), r["name"].casefold()))

@@ -20,6 +20,7 @@ from http.cookies import SimpleCookie
 from pathlib import Path
 
 from . import __version__
+from .check_types import check_service
 from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
@@ -166,7 +167,8 @@ class WebApplication:
         return {"checks": rows, "monitoring": {"schedules": monitoring["schedules"],
                 "suggestions": [r for r in read_json(self.directory / "exports/calendar-suggestions.json", []) if r["id"] not in active],
                 "rules": [{k: v for k, v in r.items() if k != "examples"} for r in monitoring["rules"]],
-                "tasks": read_json(self.directory / "exports/monitor-options.json", []),
+                "tasks": [{**t, "service": check_service(t["key"])}
+                          for t in read_json(self.directory / "exports/monitor-options.json", [])],
                 "unknown": catalog.get("items", []) if catalog.get("day") == summary.get("report_day") else []},
                 "version": __version__, "settings": settings,
                 "status": read_json(self.directory / "status.json"),

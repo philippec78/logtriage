@@ -171,3 +171,10 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
   .client-toolbar select {max-width:100%;width:100%}
   .check-table thead th:first-child {width:27%}
 }
+
+#client-services {margin:0 0 14px}
+#service-list {display:flex;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);gap:2px 10px}
+#service-list button {min-height:36px;border:0;border-bottom:2px solid transparent;border-radius:0;padding:4px 6px;background:transparent;color:var(--muted)}
+#service-list button:hover {background:var(--strip);color:var(--text)}
+#service-list button[aria-pressed=true] {border-bottom-color:var(--primary);color:var(--primary);font-weight:600}
+.check-table .service-title {padding:6px;text-align:left;font-weight:600;background:var(--strip)}

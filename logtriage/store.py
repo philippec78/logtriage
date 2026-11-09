@@ -7,7 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .calendar_suggestions import suggestions
-from .check_types import check_type
+from .check_types import check_service, check_type
 from .clients import message_client
 from .dashboard import checks
 from .digest import day_messages, derive_state, render_digest
@@ -173,7 +173,7 @@ class Store:
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})
-        pending = [{"id": t["signal_id"], "client": t["client"], "check_type": check_type(t["key"]), "summary": t.get("summary") or t["key"],
+        pending = [{"id": t["signal_id"], "client": t["client"], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "summary": t.get("summary") or t["key"],
                     "missing": t.get("format") == "missing-report", "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
                    if t["state"] in ("open", "warning")]
         pending.sort(key=lambda t: t["date"], reverse=True)

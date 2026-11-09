@@ -70,7 +70,7 @@ function renderIncidents(rows) {
       checkbox.checked = selected.has(row.id);
       const text = document.createElement('span');
       text.textContent = row.summary;
-      text.append(element('small','issue-client','Client : '+clientLabel(row.client)+' · Type : '+typeLabel(row)));
+      text.append(element('small','issue-client','Client : '+clientLabel(row.client)+' · Service : '+serviceLabel(row)+' · Type : '+typeLabel(row)));
       const when = element('time','issue-date',date(row.date));
       when.dateTime = row.date;
       text.className = 'issue-name';
@@ -212,6 +212,46 @@ function element(tag, name, text) {
   return node;
 }
 const clientLabel = domain => domain || 'Domaine indéterminé';
+const serviceLabel = row => row.service || 'Autres services';
+let selectedService = '*';
+function matchesScope(row) {
+  const client = $('client-filter').value, type = $('type-filter').value;
+  return (client === '*' || (row.client || '') === client) &&
+    (selectedService === '*' || serviceLabel(row) === selectedService) &&
+    (type === '*' || typeLabel(row) === type);
+}
+function resetCheckFilters() {
+  $('type-filter').value = '*';
+  $('check-status').value = '';
+  $('check-search').value = '';
+}
+function renderServices(client, items) {
+  const section = $('client-services'), list = $('service-list');
+  section.hidden = client === '*';
+  if (section.hidden) {
+    selectedService = '*';
+    return;
+  }
+  const services = [...new Set(items.filter(row => (row.client || '') === client).map(serviceLabel))]
+    .sort((a,b) => a.localeCompare(b,'fr'));
+  if (!services.includes(selectedService)) selectedService = '*';
+  $('services-title').textContent = 'Services de '+clientLabel(client);
+  const signature = JSON.stringify(services);
+  if (list.dataset.services !== signature) {
+    list.replaceChildren(...['*', ...services].map(service => {
+      const item = button(service === '*' ? 'Tous les services' : service, () => {
+        selectedService = service;
+        resetCheckFilters();
+        renderClientView(current);
+      });
+      item.dataset.service = service;
+      return item;
+    }));
+    if (!services.length) list.replaceChildren(element('p','muted','Aucun service identifié pour ce client.'));
+    list.dataset.services = signature;
+  }
+  for (const item of list.querySelectorAll('button')) item.setAttribute('aria-pressed', String(item.dataset.service === selectedService));
+}
 const typeLabel = row => row.check_type || 'Autre contrôle';
 function updateFilter(id, values, label, allLabel) {
   const picker = $(id);
@@ -228,23 +268,29 @@ function updateFilter(id, values, label, allLabel) {
 function renderClientView(state) {
   const counts = state.summary?.clients_today || {};
   const rows = state.checks || [], issues = state.incidents || [];
-  const client = updateFilter('client-filter', [...Object.keys(counts), ...rows.map(r => r.client || ''),
-    ...issues.map(r => r.client || '')], clientLabel, 'Tous les clients');
+  const catalog = [...rows, ...issues, ...(state.monitoring?.tasks || [])];
+  const client = updateFilter('client-filter', [...Object.keys(counts), ...catalog.map(r => r.client || '')],
+    clientLabel, 'Tous les clients');
+  renderServices(client, catalog);
   const owns = row => client === '*' || (row.client || '') === client;
-  const types = [...rows, ...issues].filter(owns).map(typeLabel);
+  const types = [...rows, ...issues].filter(r => owns(r) && (selectedService === '*' || selectedService === serviceLabel(r))).map(typeLabel);
   const type = updateFilter('type-filter', types, value => value, 'Tous les types');
-  const matchesType = row => type === '*' || typeLabel(row) === type;
+  const detailFilter = selectedService !== '*' || type !== '*';
   $('message-count').textContent = client === '*' ? state.summary?.today_messages ?? '—' : counts[client]?.messages || 0;
   $('unknown-count').textContent = client === '*' ? state.summary?.today_unknown ?? '—' : counts[client]?.unknown || 0;
-  for (const id of ['message-count','unknown-count']) $(id).parentElement.hidden = type !== '*';
+  for (const id of ['message-count','unknown-count']) $(id).parentElement.hidden = detailFilter;
   $('global-digest').hidden = client !== '*' || type !== '*';
-  renderIncidents(issues.filter(r => owns(r) && matchesType(r)));
+  renderIncidents(issues.filter(matchesScope));
   renderChecks(rows);
 }
-for (const id of ['client-filter','type-filter']) $(id).addEventListener('change', () => renderClientView(current));
+$('client-filter').addEventListener('change', () => {
+  selectedService = '*';
+  resetCheckFilters();
+  renderClientView(current);
+});
+$('type-filter').addEventListener('change', () => renderClientView(current));
 function renderChecks(rows) {
-  const client = $('client-filter').value, type = $('type-filter').value;
-  rows = rows.filter(row => (client === '*' || (row.client || '') === client) && (type === '*' || type === typeLabel(row)));
+  rows = rows.filter(matchesScope);
   const counts = {good:0, warn:0, bad:0, other:0};
   rows.forEach(row => counts[checkKind(row)]++);
   const totals = $('status-totals');
@@ -277,7 +323,7 @@ function renderChecks(rows) {
     groups.get(section).push(row);
   }
   if (!groups.size) {
-    list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle à afficher pour le moment.'));
+    list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle du jour ni incident ouvert dans cette sélection.'));
     return;
   }
   const table = element('table','check-table');
@@ -295,7 +341,16 @@ function renderChecks(rows) {
     heading.scope = 'rowgroup';
     heading.colSpan = 5;
     body.insertRow().append(heading);
-    for (const row of groups.get(domain).sort((a,b) => typeLabel(a).localeCompare(typeLabel(b),'fr') || a.name.localeCompare(b.name,'fr'))) {
+    let lastService;
+    for (const row of groups.get(domain).sort((a,b) => serviceLabel(a).localeCompare(serviceLabel(b),'fr') ||
+      typeLabel(a).localeCompare(typeLabel(b),'fr') || a.name.localeCompare(b.name,'fr'))) {
+      const service = serviceLabel(row);
+      if (lastService !== service) {
+        const title = element('th','service-title',service);
+        title.colSpan = 5;
+        body.insertRow().append(title);
+        lastService = service;
+      }
       const tr = body.insertRow(), name = tr.insertCell(), kind = checkKind(row);
       const label = row.missing && row.state === 'warning' ? 'En retard' :
         ({good:'Sans incident',warn:'Avertissement',bad:'Échec',other:'À confirmer'})[kind];
@@ -318,7 +373,7 @@ function renderChecks(rows) {
       history.append(row.history.length ? strip : '—');
       const inspect = button('', () => {
         $('detail-title').textContent = row.name;
-        $('detail-context').textContent = 'Client : '+clientLabel(row.client)+' · Type : '+typeLabel(row)+' · '+row.host+' · '+label+' · '+date(row.date);
+        $('detail-context').textContent = 'Client : '+clientLabel(row.client)+' · Service : '+serviceLabel(row)+' · Type : '+typeLabel(row)+' · '+row.host+' · '+label+' · '+date(row.date);
         const entries = row.history.map(([stamp,event]) => element('li','',date(stamp)+' · '+(executionLabels[event] || 'À confirmer')));
         const content = entries.length ? element('ol','') : element('p','','Aucun signal reçu aujourd’hui.');
         content.append(...entries);
