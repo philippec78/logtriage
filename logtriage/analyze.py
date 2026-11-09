@@ -112,6 +112,7 @@ def wazuh_observations(plain, html, rules):
 
 
 def analyze(raw, rules):
+    from .formats import classify, component
     message = BytesParser(policy=policy.default).parsebytes(raw)
     subject, sender = str(message.get("Subject", "")), str(message.get("From", ""))
     plain, html, attachments, warnings = [], [], [], []
@@ -173,7 +174,10 @@ def analyze(raw, rules):
                       execution=execution, evidence=evidence or [])
 
     ns = norm(subject)
-    if "wazuh" in ns:
+    extension = classify(subject, sender, text, plain, html, rules)
+    if extension:
+        result.update(extension)
+    elif "wazuh" in ns:
         observations = wazuh_observations(plain, html, rules["wazuh"])
         result["observations"] = observations
         elevated = re.search(r"Alertes niveaux 12[–-]14\s*:\s*([\d ]+)", text, re.I)
@@ -256,7 +260,7 @@ def analyze(raw, rules):
             key = f"synology-replication|{host or 'inconnu'}|{source or 'inconnu'}|{dest or 'inconnu'}"
             set_result("echec" if failure else "fin_annoncee", f"Réplication {source} vers {dest} : " + ("échec." if failure else "fin annoncée."), key, "failure" if failure else "completed", [failure or subject])
         else:
-            task = line_field(text, "Tâche de sauvegarde")
+            task = line_field(text, r"(?:Tâche de sauvegarde|Nom de la tâche)")
             match = re.search(r"tâche de sauvegarde (.+?) (?:sur |a rencontré|est |a échoué)", combined, re.I)
             task = task or (match[1].strip() if match else "inconnue")
             if not host:
@@ -283,4 +287,11 @@ def analyze(raw, rules):
         result["category"] = "a_verifier"
         if result["execution"] == "success":
             result["execution"] = "completed"
+    result.setdefault("format", "wazuh-summary" if "wazuh" in ns else "openvas" if "openvas" in ns else
+                      result["task_key"].split("|")[0] if result["task_key"] else "unknown")
+    result.setdefault("recognized", result["format"] != "unknown")
+    result["task_key"] = component(result["task_key"]) if result["task_key"] else None
+    # Même identifiant pour un rapport direct et une copie transmise par CMS.
+    if "echec" == result["category"] and not result["evidence"]:
+        result["evidence"] = [subject]
     return result
