@@ -92,6 +92,42 @@ function openIncident(row) {
   $('check-detail').showModal();
   showMailDetail(row.detail_id);
 }
+function incidentItem(row, selected, expanded) {
+  const item = document.createElement('li');
+  const label = document.createElement('label');
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.value = row.id;
+  checkbox.checked = selected.has(row.id);
+  const text = document.createElement('span');
+  text.textContent = row.summary;
+  const context = ['Service : '+serviceLabel(row), 'Type : '+typeLabel(row)];
+  if (row.client?.startsWith('@') && row.client.length > 1) context.push('Source : '+row.client.slice(1));
+  text.append(element('small','issue-context',context.join(' · ')));
+  const when = element('time','issue-date',date(row.date));
+  when.prepend(element('span','sr-only','Dernier signal · '));
+  when.dateTime = row.date;
+  text.className = 'issue-name';
+  text.prepend(element('span','sr-only',row.severity === 'open' ? 'Échec — ' : 'Avertissement — '));
+  label.append(checkbox, when, text);
+  item.dataset.kind = row.severity === "open" ? "bad" : "warn";
+  const line = element('div','issue-line');
+  line.append(label, inspectButton('Voir le détail de l’incident · '+clientLabel(row.client)+' · '+row.summary,
+    () => openIncident(row)));
+  item.append(line);
+  if (row.analysis?.state === 'ready') {
+    const note = element('details','incident-note');
+    note.dataset.signal = row.id;
+    note.open = expanded.has(row.id);
+    note.append(element('summary','','Analyse IA · '+row.analysis.constat),
+      element('p','','Élément relevé : « '+row.analysis.preuve+' »'),
+      element('p','','Vérification proposée : '+row.analysis.verification));
+    item.append(note);
+  } else if (row.analysis) {
+    item.append(element('p','incident-note muted', analysisStatus(row.analysis)));
+  }
+  return item;
+}
 function renderIncidents(rows) {
   const list = $('incident-list');
   const fingerprint = JSON.stringify(rows);
@@ -100,44 +136,34 @@ function renderIncidents(rows) {
     const expanded = new Set(Array.from(list.querySelectorAll('details[open]'), node => node.dataset.signal));
     const focused = list.contains(document.activeElement) ? document.activeElement.value : null;
     const fragment = document.createDocumentFragment();
+    const groups = new Map();
     for (const row of rows) {
-      const item = document.createElement('li');
-      const label = document.createElement('label');
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = row.id;
-      checkbox.checked = selected.has(row.id);
-      const text = document.createElement('span');
-      text.textContent = row.summary;
-      text.append(element('small','issue-client','Client : '+clientLabel(row.client)+' · Service : '+serviceLabel(row)+' · Type : '+typeLabel(row)));
-      const when = element('time','issue-date',date(row.date));
-      when.dateTime = row.date;
-      text.className = 'issue-name';
-      text.prepend(element('span','sr-only',row.severity === 'open' ? 'Échec — ' : 'Avertissement — '));
-      label.append(checkbox, when, text);
-      item.dataset.kind = row.severity === "open" ? "bad" : "warn";
-      const line = element('div','issue-line');
-      line.append(label, inspectButton('Voir le détail de l’incident · '+clientLabel(row.client)+' · '+row.summary,
-        () => openIncident(row)));
-      item.append(line);
-      if (row.analysis?.state === 'ready') {
-        const note = element('details','incident-note');
-        note.dataset.signal = row.id;
-        note.open = expanded.has(row.id);
-        note.append(element('summary','','Analyse IA · '+row.analysis.constat),
-          element('p','','Élément relevé : « '+row.analysis.preuve+' »'),
-          element('p','','Vérification proposée : '+row.analysis.verification));
-        item.append(note);
-      } else if (row.analysis) {
-        item.append(element('p','incident-note muted', analysisStatus(row.analysis)));
-      }
-      fragment.append(item);
+      const owner = clientGroup(row.client);
+      if (!groups.has(owner)) groups.set(owner, []);
+      groups.get(owner).push(row);
+    }
+    const owners = [...groups.keys()].filter(owner => owner !== '@').sort((a,b) => a.localeCompare(b,'fr'));
+    if (groups.has('@')) owners.push('@');
+    for (const owner of owners) {
+      const incidents = groups.get(owner);
+      const section = element('section','incident-group');
+      const unassigned = owner === '@';
+      section.classList.toggle('unassigned',unassigned);
+      const heading = element('h3','',unassigned ? 'Non attribués' : 'Client · '+owner);
+      heading.id = 'incident-group-'+fragment.childElementCount;
+      section.setAttribute('aria-labelledby',heading.id);
+      const count = incidents.length;
+      const head = element('div','incident-group-heading');
+      head.append(heading, element('span','',count+' incident'+(count > 1 ? 's' : '')));
+      const entries = element('ul','');
+      entries.append(...incidents.map(row => incidentItem(row, selected, expanded)));
+      section.append(head, entries);
+      fragment.append(section);
     }
     list.replaceChildren(fragment);
     if (focused) Array.from(list.querySelectorAll('input')).find(input => input.value === focused)?.focus({preventScroll:true});
     list.dataset.rows = fingerprint;
   }
-  $('issues-head').hidden = rows.length === 0;
   $('incident-count').textContent = '(' + rows.length + ')';
   $('incident-empty').hidden = rows.length !== 0;
   $('incident-hint').hidden = $('resolve-incident').hidden = list.hidden = rows.length === 0;
