@@ -1,20 +1,28 @@
 services:
   triage:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: imap-log-triage:local
+    pull_policy: build
     restart: unless-stopped
     init: true
-#    env_file: .env
     environment:
+      IMAP_HOST: ${IMAP_HOST:?Renseigne IMAP_HOST dans les variables de la stack}
+      IMAP_PORT: ${IMAP_PORT:-993}
+      IMAP_USER: ${IMAP_USER:?Renseigne IMAP_USER dans les variables de la stack}
+      IMAP_PASSWORD: ${IMAP_PASSWORD:?Renseigne IMAP_PASSWORD dans les variables de la stack}
+      IMAP_FOLDER: ${IMAP_FOLDER:-INBOX}
+      INITIAL_LOOKBACK_DAYS: ${INITIAL_LOOKBACK_DAYS:-30}
+      POLL_SECONDS: ${POLL_SECONDS:-300}
+      MAX_MESSAGES_PER_POLL: ${MAX_MESSAGES_PER_POLL:-500}
+      MAX_MESSAGE_BYTES: ${MAX_MESSAGE_BYTES:-20971520}
+      IMAP_TIMEOUT_SECONDS: ${IMAP_TIMEOUT_SECONDS:-45}
       DATA_DIR: /data
       RULES_FILE: /app/config/rules.json
-      IMAP_PASSWORD_FILE: /run/secrets/imap_password
       TZ: Europe/Zurich
-    secrets:
-      - imap_password
     volumes:
       - triage-data:/data
-      - ./config:/app/config:ro
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -38,7 +46,3 @@ services:
 
 volumes:
   triage-data:
-
-#secrets:
-#  imap_password:
-#    file: ./secrets/imap_password.txt
