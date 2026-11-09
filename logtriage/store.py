@@ -168,8 +168,10 @@ class Store:
         options = task_options(tasks.values())
         atomic_json(export / "monitor-options.json", options)
         atomic_json(export / "calendar-suggestions.json", suggestions(messages, options, status.get("scope"), moment, tz))
-        atomic_json(export / "checks.json", {"day": summary["report_day"],
-                    "items": checks(tasks.values(), state_events, moment, tz)})
+        check_rows = checks(tasks.values(), state_events, moment, tz)
+        details = {row["detail_id"]: row.pop("detail") for row in check_rows}
+        atomic_json(export / "check-details.json", details)
+        atomic_json(export / "checks.json", {"day": summary["report_day"], "items": check_rows})
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})

@@ -107,7 +107,7 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .inspect {position:relative;width:28px;min-height:26px;padding:0;border:0;background:transparent;color:var(--primary);vertical-align:middle}
 .inspect::before {content:"";position:absolute;top:6px;left:7px;width:8px;height:8px;border:1.7px solid currentColor;border-radius:50%}
 .inspect::after {content:"";position:absolute;top:16px;left:16px;width:7px;border-top:1.7px solid currentColor;transform:rotate(45deg)}
-#check-detail {max-width:min(440px,95vw);overflow-wrap:anywhere}
+#check-detail {max-width:min(580px,95vw);overflow-wrap:anywhere}
 #check-detail h3 {font-size:1rem}
 #check-detail ol {padding-left:1.4rem;font-variant-numeric:tabular-nums}
 .report-text {max-width:none}
@@ -178,3 +178,8 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #service-list button:hover {background:var(--strip);color:var(--text)}
 #service-list button[aria-pressed=true] {border-bottom-color:var(--primary);color:var(--primary);font-weight:600}
 .check-table .service-title {padding:6px;text-align:left;font-weight:600;background:var(--strip)}
+
+#detail-mail {border-block:1px solid var(--line);padding:8px 0;margin-bottom:16px}
+#detail-mail p {margin:.3rem 0}
+#detail-mail .mail-meta,#detail-mail .mail-subject {font-size:.87rem;color:var(--muted)}
+.mail-points {padding-left:1.3rem;margin:.6rem 0}

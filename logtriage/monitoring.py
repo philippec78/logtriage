@@ -99,7 +99,7 @@ def schedule_events(schedules, messages, status, moment, tz):
     # Une échéance n'est décidée qu'après une recherche IMAP complète postérieure.
     until = datetime.fromisoformat(status.get("checked_through", status["last_cycle_at"]))
     zone = ZoneInfo(tz)
-    arrivals = defaultdict(set)
+    arrivals = defaultdict(dict)
     for m in messages:
         stamp = datetime.fromisoformat(m.get("received_at") or m["date"])
         if stamp > until:
@@ -107,7 +107,7 @@ def schedule_events(schedules, messages, status, moment, tz):
         for event in [m, *m.get("task_events", [])]:
             if event.get("task_key"):
                 key = (m["scope"], event["task_key"], message_client(m))
-                arrivals[key].add(stamp)
+                arrivals[key][stamp] = m["sha256"]
     events = []
     for row in schedules:
         if row["scope"] != status.get("scope"):
@@ -129,7 +129,9 @@ def schedule_events(schedules, messages, status, moment, tz):
                     "observations": [], "evidence": [], "summary": summary}
         for stamp in times:
             if stamp > since:
-                events.append(event(stamp, "success", "Rapport reçu pour " + row["label"]))
+                received = event(stamp, "success", "Rapport reçu pour " + row["label"])
+                received["source_sha256"] = arrivals[row["scope"], row["key"], client][stamp]
+                events.append(received)
         while day <= until.astimezone(zone).date():
             if day.weekday() in row["days"]:
                 limit = datetime.combine(day, time.fromisoformat(row["time"]), zone).astimezone(timezone.utc)

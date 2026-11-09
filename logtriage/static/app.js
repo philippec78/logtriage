@@ -289,6 +289,31 @@ $('client-filter').addEventListener('change', () => {
   renderClientView(current);
 });
 $('type-filter').addEventListener('change', () => renderClientView(current));
+let detailRequest = 0;
+async function showMailDetail(id) {
+  const request = ++detailRequest;
+  const box = $('detail-mail'), title = $('detail-mail-title');
+  title.textContent = 'Résumé du mail';
+  box.textContent = id ? 'Chargement du résumé…' : 'Le détail du mail est indisponible.';
+  if (!id) return;
+  try {
+    const detail = await api('/api/check-detail/'+encodeURIComponent(id));
+    if (request !== detailRequest || !$('check-detail').open) return;
+    title.textContent = detail.kind === 'schedule' ? 'Suivi du rapport attendu' : 'Résumé du mail';
+    box.replaceChildren(element('p','mail-summary',detail.summary || 'Résumé indisponible.'));
+    if (detail.kind !== 'mail') return;
+    const meta = element('p','mail-meta','Mail du '+date(detail.date)+' · '+(executionLabels[detail.execution] || 'À confirmer'));
+    box.append(meta);
+    if (detail.subject) box.append(element('p','mail-subject','Objet : '+detail.subject));
+    if (detail.points.length) {
+      const facts = element('ul','mail-points');
+      facts.append(...detail.points.map(point => element('li','',point)));
+      box.append(facts);
+    }
+  } catch (error) {
+    if (request === detailRequest) box.textContent = error.message;
+  }
+}
 function renderChecks(rows) {
   rows = rows.filter(matchesScope);
   const counts = {good:0, warn:0, bad:0, other:0};
@@ -379,6 +404,7 @@ function renderChecks(rows) {
         content.append(...entries);
         $('detail-history').replaceChildren(content);
         $('check-detail').showModal();
+        showMailDetail(row.detail_id);
       });
       inspect.className = 'inspect';
       inspect.title = 'Voir les détails de '+row.name+' sur '+row.host;

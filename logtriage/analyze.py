@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 
 # À modifier quand l'analyse d'un email change. Un changement de présentation
 # du bilan réutilise les événements déjà enregistrés dans la base.
+# Les champs de présentation facultatifs ne changent pas le classement historique.
 ANALYSIS_VERSION = "0.3.0"
 
 
@@ -59,6 +60,25 @@ def clean(text):
 def line_field(text, label):
     match = re.search(r"(?im)^\s*" + label + r"\s*[:：]\s*(.+)$", text)
     return match.group(1).strip() if match else ""
+
+
+# Champs opérationnels repris dans la fiche locale du contrôle.
+REPORT_FIELD = re.compile(
+    r"^(?:durée(?: totale)?|duration|taille(?: totale)?|(?:total |backup )?size|"
+    r"(?:heure de |date de )?(?:début|fin)|start time|end time|"
+    r"(?:données|fichiers|octets) (?:transférés|transférées|sauvegardés|sauvegardées)|"
+    r"bytes transferred|destination|datastore|état actuel|current status|code de sortie|exit code)"
+    r"\s*[:：]\s*\S", re.I)
+
+
+def report_fields(body):
+    fields = []
+    for line in body.splitlines():
+        if REPORT_FIELD.match(line) and line[:220] not in fields:
+            fields.append(line[:220])
+            if len(fields) == 6:
+                break
+    return fields
 
 
 def pdf_text(payload, rules):
@@ -309,4 +329,6 @@ def analyze(raw, rules):
     # Même identifiant pour un rapport direct et une copie transmise par CMS.
     if "echec" == result["category"] and not result["evidence"]:
         result["evidence"] = [subject]
+    if result["task_key"] and not result.get("task_events"):
+        result["report_fields"] = report_fields(plain or html)
     return result

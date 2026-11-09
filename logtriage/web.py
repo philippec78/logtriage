@@ -244,6 +244,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             session = self.app.session(self.headers.get("Cookie"))
             if not session:
                 return self.reply(401, {"error": "Connecte-toi à l’interface."})
+            if path.startswith("/api/check-detail/"):
+                key = path.removeprefix("/api/check-detail/")
+                detail = read_json(self.app.directory / "exports/check-details.json", {}).get(key)
+                if detail is None:
+                    return self.reply(404, {"error": "Le détail a changé ou est indisponible. Actualise le tableau de bord."})
+                return self.reply(200, detail)
             if path == "/api/state":
                 return self.reply(200, {**self.app.state(), "csrf": session["csrf"]})
             return self.reply(404, {"error": "Page introuvable."})

@@ -86,3 +86,22 @@ class ClientTests(unittest.TestCase):
         rows = checks(derive_state(history)[0].values(), history, NOW, ZONE)
         self.assertEqual({r['client']:r['service'] for r in rows},
                          {'one.ch':'Sauvegardes', 'two.ch':'Alertes de sécurité'})
+
+    def test_latest_mail_of_each_client_uses_the_individual_task_result(self):
+        history = [event(domain, 0, 'failure') for domain in ('one.ch', 'two.ch')]
+        for mail in history:
+            mail.update(subject='Lot de sauvegardes', summary='Lot en échec', evidence=['autre VM'])
+            mail['task_events'][0].update(summary=sender_domain(mail['sender'])+' : VM 101 en échec',
+                                          evidence=['VM 101 : disque plein', 'password=secret123'])
+        old = event('one.ch', 1, 'failure')
+        old['task_events'][0]['summary'] = 'Signal ancien'
+        history.append(old)
+        rows = checks(derive_state(history)[0].values(), history, NOW, ZONE)
+        self.assertEqual(len({r['detail_id'] for r in rows}), 2)
+        for r in rows:
+            detail = r['detail']
+            self.assertEqual(detail['summary'], r['client']+' : VM 101 en échec')
+            self.assertIn('VM 101 : disque plein', detail['points'])
+            self.assertNotIn('autre VM', detail['points'])
+            self.assertNotIn('secret123', str(detail))
+            self.assertEqual(detail['date'], history[0]['date'])

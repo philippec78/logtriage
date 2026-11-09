@@ -63,7 +63,7 @@ class WebTests(unittest.TestCase):
         message = EmailMessage()
         message["Subject"] = "[NAS] Le planificateur de tâches a terminé une tâche planifiée"
         message["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
-        message.set_content("Tâche : backup\nÉtat actuel : 127\nDe NAS")
+        message.set_content("Tâche : backup\nÉtat actuel : 127\nDurée : 10 minutes\nDe NAS")
         store = Store(self.directory)
         store.put("test-ref", "test", analyze(message.as_bytes(), load_rules()))
         store.export()
@@ -76,6 +76,21 @@ class WebTests(unittest.TestCase):
         while self.app.reports.job["state"] == "running" and time.monotonic() < deadline:
             time.sleep(.01)
         self.assertNotEqual(self.app.reports.job["state"], "running")
+
+    def test_magnifier_loads_the_summary_and_body_facts_only_after_login(self):
+        self.fixture()
+        row, = read_json(self.directory / "exports/checks.json")["items"]
+        path = "/api/check-detail/" + row["detail_id"]
+        self.assertEqual(self.request(path)[0], 401)
+        self.login()
+        self.assertNotIn("detail", self.request("/api/state")[1]["checks"][0])
+        status, mail, _ = self.request(path)
+        self.assertEqual(status, 200)
+        self.assertIn("backup", mail["summary"])
+        self.assertIn("État actuel : 127", mail["points"])
+        self.assertIn("Durée : 10 minutes", mail["points"])
+        self.assertIn("planificateur", mail["subject"])
+        self.assertEqual(self.request("/api/check-detail/absent")[0], 404)
 
     def test_private_data_requires_login_and_cookie_is_protected(self):
         self.assertEqual(self.request("/api/state")[0], 401)
