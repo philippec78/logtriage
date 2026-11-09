@@ -1,0 +1,26 @@
+{
+  "mode": "lecture_seule",
+  "tests": {
+    "executed": 11,
+    "passed": 11,
+    "real_imap_connection": false
+  },
+  "sample": {
+    "emails": 10,
+    "categories": {
+      "echec": 3,
+      "reussite_signalee": 3,
+      "fin_annoncee": 2,
+      "a_examiner": 1,
+      "information_avec_observations": 1
+    },
+    "open_tasks": 2,
+    "observation_groups": 7,
+    "second_import_new_messages": 0
+  },
+  "compose_yaml": "parsed_and_read_only_structure_checked",
+  "docker_image_build": "not_run_docker_unavailable",
+  "docker_container_start": "not_run_docker_unavailable",
+  "outgoing_notifications": false,
+  "missing_report_monitoring": false
+}
