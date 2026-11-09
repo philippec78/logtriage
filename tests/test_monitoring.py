@@ -32,7 +32,7 @@ def mail(subject, stamp, execution=None, scope="imap:one"):
 
 class ScheduleTests(unittest.TestCase):
     def setUp(self):
-        self.row = {"id": "abc", "key": "backup|nas|homes", "scope": "imap:one", "label": "NAS Homes",
+        self.row = {"id": "abc", "client": "example.org", "key": "backup|nas|homes", "scope": "imap:one", "label": "NAS Homes",
                     "since": at(6, 11).isoformat(), "time": "07:00", "days": [0, 1, 2, 3, 4]}
 
     def events(self, now, mails=(), **updates):

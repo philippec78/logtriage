@@ -93,14 +93,14 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .check-table {width:100%;border-collapse:collapse;table-layout:fixed;text-align:left;font-size:.86rem}
 .check-table th,.check-table td {padding:3px 6px;overflow-wrap:anywhere}
 .check-table thead th {font-size:.78rem;color:var(--muted);border-bottom:1px solid var(--line);font-weight:600}
-.check-table thead th:first-child {width:47%}
+.check-table thead th:first-child {width:34%}
 .check-table thead th:nth-child(2) {width:24%}
 .check-table thead th:last-child {width:3.4rem;text-align:right}
 .check-table .family-title {text-transform:uppercase;letter-spacing:.04em;font-weight:600;font-size:.85rem;color:var(--text);padding-top:13px;text-align:left}
 .check-table td:first-child>.signal {margin-right:6px}
 .check-name {color:var(--primary)}
 .check-host {margin-left:6px;color:var(--muted);font-size:.8rem}
-.check-table td:nth-child(2) {font-variant-numeric:tabular-nums}
+.check-table td:nth-child(3) {font-variant-numeric:tabular-nums}
 .check-table td:last-child {text-align:right}
 .signal-strip {display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;vertical-align:middle}
 .check-table tr:has(td):hover {background:var(--surface)}
@@ -155,7 +155,7 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
   .signal,.state-label::before,#incident-list label::before {filter:brightness(1.45)}
 }
 
-.client-toolbar {display:flex;align-items:center;gap:10px;margin:0 0 15px}
+.client-toolbar {display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 15px}
 .client-toolbar label {margin:0;font-weight:600}
 .client-toolbar select {width:auto;max-width:78%;font-size:.9rem;min-height:34px;padding:4px 10px}
 #incident-list .issue-client {display:inline;margin-left:.55em;font-weight:400;color:var(--muted)}
@@ -165,3 +165,9 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #incident-list .incident-note {margin:2px 0 7px 25px;font-size:.82rem;line-height:1.4;overflow-wrap:anywhere}
 .incident-note summary {color:var(--primary);cursor:pointer}
 .incident-note p {margin:.35rem 0}
+
+@media (max-width:650px) {
+  .client-toolbar {display:grid;grid-template-columns:auto minmax(0,1fr)}
+  .client-toolbar select {max-width:100%;width:100%}
+  .check-table thead th:first-child {width:27%}
+}

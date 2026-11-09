@@ -62,9 +62,9 @@ def derive_state(messages, resolutions=None):
                     task["last_success"] = message["date"]
                 task["message_sha256"] = message["sha256"]
             for item in message["observations"]:
-                identity = message["scope"] + "|" + item["key"]
+                identity = (message["scope"], client, item["key"])
                 previous = observations.get(identity)
-                observations[identity] = {**item, "scope": message["scope"],
+                observations[identity] = {**item, "scope": message["scope"], "client": client,
                                            "first_seen": previous["first_seen"] if previous else message["date"],
                                            "last_seen": message["date"], "message_sha256": message["sha256"],
                                            "reports_seen": (previous["reports_seen"] if previous else 0) + 1}
@@ -134,7 +134,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         if task.get("format") in ("synology-snapshot-overlap", "synology-snapshot"):
             identity = "|".join(task["key"].split("|")[:2])
         group_id = (task["scope"], task.get("client", ""), identity)
-        group = groups.setdefault(group_id, {"summary": task.get("summary", task["key"]),
+        group = groups.setdefault(group_id, {"client": task.get("client", ""), "summary": task.get("summary", task["key"]),
                                               "date": task["last_problem"], "severity": 0 if task["state"] == "open" else 1,
                                               "occurrences": 0, "resources": set()})
         if task.get("format") == "missing-report":
@@ -150,7 +150,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         group["resources"].add(task["key"])
         group["date"] = max(group["date"], task["last_problem"])
         group["severity"] = min(group["severity"], 0 if task["state"] == "open" else 1)
-    seen_today = collections.Counter((m["scope"], o["key"]) for m in recent for o in m["observations"])
+    seen_today = collections.Counter((m["scope"], message_client(m), o["key"]) for m in recent for o in m["observations"])
     for o in observations:
         if not cutoff <= o["last_seen"] <= end:
             continue
@@ -158,10 +158,12 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         cvss = o.get("source_cvss")
         if level is None and not o.get("urgent") and ((o.get("source") == "pdf" and cvss is None) or (o.get("source") in ("pdf", "inline") and cvss is not None and cvss < 4)):
             continue  # Constat faible/informatif conservé dans les JSON.
-        groups[(o["scope"], o["key"])] = {
+        observation_key = (o["scope"], o.get("client", ""), o["key"])
+        groups[("observation", *observation_key)] = {
+            "client": o.get("client", ""),
             "summary": (o.get("host", "") + " : " if o.get("host") else "") + o["summary"],
             "date": o["last_seen"], "severity": 0 if o.get("urgent") else 1,
-            "occurrences": seen_today[(o["scope"], o["key"])], "resources": set(),
+            "occurrences": seen_today[observation_key], "resources": set(),
             "security": True}
     # Un message réellement inconnu reste visible, une fois par modèle et non par email.
     unknown = collections.Counter()
@@ -173,24 +175,25 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 continue
             if review and review["verdict"] == "signal":
                 for finding in review["findings"]:
-                    identity = ("ai", m["scope"], review["subject"], finding["summary"], finding["quote"])
+                    identity = ("ai", m["scope"], message_client(m), review["subject"], finding["summary"], finding["quote"])
                     group = groups.setdefault(identity, {
-                        "summary": finding["summary"], "date": m["date"], "severity": 1,
+                        "client": message_client(m), "summary": finding["summary"], "date": m["date"], "severity": 1,
                         "occurrences": 0, "resources": set(), "ai_source": review["subject"], "quote": finding["quote"]})
                     group["occurrences"] += 1
                     group["date"] = max(group["date"], m["date"])
                 continue
             model = re.sub(r"\d+", "#", m["subject"])
-            unknown[model] += 1
-            example[model] = m
+            bucket = (m["scope"], message_client(m), model)
+            unknown[bucket] += 1
+            example[bucket] = m
         elif m["category"] in ("echec", "avertissement", "a_examiner") and not m.get("task_key") and not m.get("task_events") and not m["observations"]:
             model = re.sub(r"\d+", "#", m["subject"])
-            groups[(m["scope"], model)] = {"summary": m["summary"], "date": m["date"],
+            groups[("message", m["scope"], message_client(m), model)] = {"client": message_client(m), "summary": m["summary"], "date": m["date"],
                                             "severity": 0 if m["category"] == "echec" else 1,
                                             "occurrences": 1, "resources": set()}
     for model, count in unknown.items():
         m = example[model]
-        groups[(m["scope"], "unknown:" + model)] = {"summary": m["summary"] if m.get("recognized") else m["subject"],
+        groups[("unknown", *model)] = {"client": message_client(m), "summary": m["summary"] if m.get("recognized") else m["subject"],
                                                     "date": m["date"], "severity": 2,
                                                     "occurrences": count, "resources": set()}
     ordered = sorted(groups.values(), key=lambda g: (g.get("changes") == {"Répété"}, g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
@@ -216,6 +219,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 continue
             label = "ÉCHEC" if group["severity"] == 0 else "À VÉRIFIER" if group["severity"] == 2 else "ATTENTION"
             line = f"- {label} — {readable(group['summary'])}"
+            line += " · Client " + (group["client"] or "indéterminé")
             changes = group.get("changes", set()) - {"Rapport manquant"}
             if changes:
                 line += " · " + ", ".join(sorted(changes))
@@ -234,20 +238,22 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         lines += ["", "RÉTABLIS AUJOURD’HUI"]
         for task in recovered:
             origin = "Validé manuellement" if task.get("resolved_by") == "manual" else ("Réception confirmée" if task.get("format") == "missing-report" else "Confirmé par les logs")
-            lines.append(f"- {readable(task.get('summary') or task['key'])} — {origin} le {local_stamp(task['resolved_at'], zone)}")
+            lines.append(f"- {readable(task.get('summary') or task['key'])} · Client {task.get('client') or 'indéterminé'} — {origin} le {local_stamp(task['resolved_at'], zone)}")
 
     if older:
         lines += ["", "PROBLÈMES TOUJOURS OUVERTS"]
         def server(task):
             parts = task["key"].removeprefix("missing|").split("|")
             return parts[1] if len(parts) > 1 else "Serveur non identifié"
-        for host, entries in itertools.groupby(sorted(older, key=lambda t: (server(t), t["key"])), server):
-            lines.append("Serveur / source — " + readable(host))
+        def client_host(task):
+            return task.get("client", ""), server(task)
+        for (client, host), entries in itertools.groupby(sorted(older, key=lambda t: (client_host(t), t["key"])), client_host):
+            lines.append("Client " + (client or "indéterminé") + " · Serveur / source — " + readable(host))
             for task in entries:
                 label = "ÉCHEC" if task["state"] == "open" else "ATTENTION"
                 first = local_stamp(task.get("opened_at") or task["last_problem"], zone)
                 last = local_stamp(task["last_problem"], zone)
-                lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} · ouvert le {first} · dernier signal le {last}")
+                lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} · Client {client or 'indéterminé'} · ouvert le {first} · dernier signal le {last}")
 
     unreadable = sum(bool(m["coverage_warnings"]) for m in recent)
     if unreadable:

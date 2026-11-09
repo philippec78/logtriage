@@ -4,6 +4,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
+from .clients import message_client
 from .openai_http import OpenAIError
 
 
@@ -67,6 +68,7 @@ class ReportAgent:
 
     def event(self, message, details=False):
         value = {k: message.get(k) for k in ("sha256", "date", "category", "summary", "execution", "task_key")}
+        value["client"] = message_client(message)
         if details:
             value["evidence"] = message.get("evidence", [])[:5]
             value["coverage_warnings"] = message.get("coverage_warnings", [])
@@ -94,7 +96,8 @@ class ReportAgent:
             return self.event(message, True)
         if not message.get("task_key"):
             return {"error": "Historique de tâche non identifiable avec certitude."}
-        history = [m for m in self.messages.values() if m.get("task_key") == message["task_key"] and m["scope"] == message["scope"]]
+        history = [m for m in self.messages.values() if m.get("task_key") == message["task_key"] and m["scope"] == message["scope"]
+                   and message_client(m) == message_client(message)]
         return [self.event(m, True) for m in sorted(history, key=lambda m: m["date"], reverse=True)[:12]]
 
     def run(self):

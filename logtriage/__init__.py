@@ -1,3 +1,3 @@
 """Analyse locale des rapports de serveurs, accès IMAP en lecture seule."""
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"

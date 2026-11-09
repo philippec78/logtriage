@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .ai_report import ReportAgent, annotate
+from .clients import message_client
 from .digest import day_messages, render_digest
 from .openai_http import OpenAIError
 from .monitoring import policy, reliable, identity as policy_hash
@@ -138,10 +139,10 @@ class WebReports:
                         report = render_digest(*digest_args, unknown_reviews=reviews) + "\n" + coverage + "\n"
                 today = day_messages(messages, now, tz)
                 today_ids = {m["sha256"] for m in today}
-                open_keys = {(t["scope"], t["key"]) for t in tasks if t["state"] in ("open", "warning")}
+                open_keys = {(t["scope"], t["key"], t.get("client", "")) for t in tasks if t["state"] in ("open", "warning")}
                 history = [m for m in messages if m["sha256"] in today_ids
-                           or (m["scope"], m.get("task_key")) in open_keys
-                           or any((m["scope"], e["task_key"]) in open_keys for e in m.get("task_events", []))]
+                           or (m["scope"], m.get("task_key"), message_client(m)) in open_keys
+                           or any((m["scope"], e["task_key"], message_client(m)) in open_keys for e in m.get("task_events", []))]
                 notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, history,
                                            settings["ai_instructions"], profile=profile).run()
                 report = annotate(report, notes)

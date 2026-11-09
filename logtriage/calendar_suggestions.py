@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from math import ceil
 from zoneinfo import ZoneInfo
 
+from .clients import message_client
 from .monitoring import identity, policy
 from .private import locked, private_dir, read_json, write_private
 
@@ -27,7 +28,7 @@ def suggestions(messages, options, scope, moment, tz):
             key = event.get("task_key")
             if not key:
                 continue
-            by_day = arrivals[key]
+            by_day = arrivals[key, message_client(message)]
             minute = stamp.hour * 60 + stamp.minute + stamp.second / 60
             if day not in by_day or minute < by_day[day][0]:
                 by_day[day] = (minute, bool(received))
@@ -35,7 +36,7 @@ def suggestions(messages, options, scope, moment, tz):
     for task in options:
         if task["scope"] != scope:
             continue
-        dates = arrivals.get(task["key"])
+        dates = arrivals.get((task["key"], task.get("client", "")))
         if not dates or (today - max(dates)).days > 7:
             continue
         counts = Counter(day.weekday() for day in dates)
@@ -78,7 +79,7 @@ def activate_suggestions(directory, tokens):
                 if existing["days"] == row["days"] and existing["time"] == row["time"]:
                     continue
                 raise ValueError("Un calendrier a déjà été configuré pour cette tâche. Vérifie la sélection.")
-            additions.append({k: row[k] for k in ("id", "scope", "key", "label", "days", "time")})
+            additions.append({k: row[k] for k in ("id", "scope", "key", "label", "days", "time", "client") if k in row})
         if len(active) + len(additions) > 500:
             raise ValueError("La limite est de 500 calendriers actifs.")
         if additions:

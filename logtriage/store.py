@@ -7,11 +7,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .calendar_suggestions import suggestions
+from .check_types import check_type
 from .clients import message_client
 from .dashboard import checks
 from .digest import day_messages, derive_state, render_digest
 from .user_rules import apply_rules
-from .monitoring import identity, policy, reliable, schedule_events, task_options
+from .monitoring import bind_old_schedules, identity, policy, reliable, schedule_events, task_options
 from .private import locked, read_json
 
 
@@ -132,6 +133,10 @@ class Store:
         config = policy(self.directory)
         status = collection_status if collection_status is not None else read_json(self.directory / "status.json", {})
         messages = [apply_rules(m, config["rules"]) for m in messages] if config["rules"] else messages
+        if any("client" not in row for row in config["schedules"]):
+            options = task_options({"scope": m["scope"], "key": e["task_key"], "client": message_client(m)}
+                                   for m in messages for e in [m, *m.get("task_events", [])] if e.get("task_key"))
+            config = bind_old_schedules(self.directory, options, moment)
         scheduled = schedule_events(config["schedules"], messages, status, moment, tz)
         state_events = messages + scheduled
         resolutions = dict(self.db.execute("SELECT signal,resolved_at FROM resolutions"))
@@ -168,7 +173,7 @@ class Store:
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})
-        pending = [{"id": t["signal_id"], "client": t["client"], "summary": t.get("summary") or t["key"],
+        pending = [{"id": t["signal_id"], "client": t["client"], "check_type": check_type(t["key"]), "summary": t.get("summary") or t["key"],
                     "missing": t.get("format") == "missing-report", "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
                    if t["state"] in ("open", "warning")]
         pending.sort(key=lambda t: t["date"], reverse=True)

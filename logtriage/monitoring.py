@@ -34,11 +34,40 @@ def change(directory, section, key, item=None, previous=None):
 
 
 def task_options(tasks):
-    # Un calendrier existant surveille une tâche de sa boîte, y compris si plusieurs domaines la signalent.
-    keys = dict.fromkeys((t["scope"], t["key"]) for t in tasks
+    keys = dict.fromkeys((t["scope"], t["key"], t.get("client", "")) for t in tasks
                          if t["scope"].startswith("imap:") and t.get("format") != "missing-report")
-    return [{"id": identity(scope, key), "key": key, "scope": scope,
-             "label": " · ".join(key.split("|"))} for scope, key in keys]
+    return [{"id": identity(scope, key, client), "key": key, "scope": scope, "client": client,
+             "label": (client or "Domaine indéterminé") + " — " + " · ".join(key.split("|"))}
+            for scope, key, client in keys]
+
+
+def bind_old_schedules(directory, options, moment):
+    root = private_dir(directory)
+    with locked(root / "monitoring.lock"):
+        config = policy(directory)
+        by_task = defaultdict(list)
+        for task in options:
+            by_task[task["scope"], task["key"]].append(task)
+        scoped = {r["id"] for r in config["schedules"] if "client" in r}
+        rows = []
+        for row in config["schedules"]:
+            matches = by_task[row["scope"], row["key"]]
+            if "client" in row or not matches:
+                rows.append(row)
+                continue
+            for match in matches:
+                if match["id"] in scoped:
+                    continue
+                bound = {**row, **match}
+                if len(matches) == 1:
+                    bound["event_id"] = row["id"]  # Préserve les résolutions des échéances existantes.
+                else:
+                    bound["since"] = moment.isoformat()
+                rows.append(bound)
+        if rows != config["schedules"]:
+            config["schedules"] = rows
+            write_private(root / "monitoring.json", config)
+        return config
 
 
 def schedule(directory, values):
@@ -71,32 +100,29 @@ def schedule_events(schedules, messages, status, moment, tz):
     until = datetime.fromisoformat(status.get("checked_through", status["last_cycle_at"]))
     zone = ZoneInfo(tz)
     arrivals = defaultdict(set)
-    clients = defaultdict(set)
     for m in messages:
         stamp = datetime.fromisoformat(m.get("received_at") or m["date"])
         if stamp > until:
             continue
         for event in [m, *m.get("task_events", [])]:
             if event.get("task_key"):
-                key = (m["scope"], event["task_key"])
+                key = (m["scope"], event["task_key"], message_client(m))
                 arrivals[key].add(stamp)
-                clients[key].add(message_client(m))
     events = []
     for row in schedules:
         if row["scope"] != status.get("scope"):
             continue
         since = datetime.fromisoformat(row["since"])
         day = since.astimezone(zone).date()
-        times = sorted(arrivals[row["scope"], row["key"]])
+        client = row.get("client", "")
+        times = sorted(arrivals[row["scope"], row["key"], client])
         first_arrivals = {}
         # La première arrivée du jour permet de reconnaître aussi un retard rattrapé.
         for stamp in times:
             first_arrivals.setdefault(stamp.astimezone(zone).date(), stamp)
-        domains = clients[row["scope"], row["key"]]
-        client = next(iter(domains)) if len(domains) == 1 else ""
         task = "missing|" + row["key"]
         def event(stamp, execution, summary):
-            return {"sha256": identity(row["id"], row["since"], stamp.isoformat(), execution),
+            return {"sha256": identity(row.get("event_id", row["id"]), row["since"], stamp.isoformat(), execution),
                     "scope": row["scope"], "date": stamp.astimezone(timezone.utc).isoformat(),
                     "category": "avertissement" if execution == "warning" else "information",
                     "format": "missing-report", "client": client, "task_key": task, "execution": execution,

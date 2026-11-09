@@ -31,7 +31,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(rows['one.ch']['state'], 'open')
         self.assertEqual(rows['one.ch']['history'], [])
         self.assertEqual(rows['two.ch']['state'], 'ok')
-        self.assertEqual(len(task_options(tasks.values())), 1)
+        self.assertEqual({r["client"] for r in task_options(tasks.values())}, {"one.ch", "two.ch"})
         history = [event(client, 0, 'failure') for client in ('one.ch','two.ch')]
         tasks, _ = derive_state(history)
         token = next(t['signal_id'] for t in tasks.values() if t['client']=='one.ch')
@@ -41,3 +41,36 @@ class ClientTests(unittest.TestCase):
         old = hashlib.sha256(json.dumps(payload).encode()).hexdigest()
         migrated, _ = derive_state(history, {old:NOW.isoformat()})
         self.assertTrue(all(t['state']=='resolved' for t in migrated.values()))
+
+    def test_same_control_keeps_distinct_calendars_and_arrival_times(self):
+        from logtriage.calendar_suggestions import suggestions
+        from logtriage.monitoring import schedule_events
+
+        history = [event(domain, day, 'success') for domain in ('one.ch', 'two.ch') for day in (7, 14, 21)]
+        for row in history:
+            if 'two.ch' in row['sender']:
+                row['date'] = row['date'].replace('T05:', 'T09:')
+        options = task_options(derive_state(history)[0].values())
+        proposals = suggestions(history, options, TASK['scope'], NOW, ZONE)
+        self.assertEqual({r['client']:r['time'] for r in proposals}, {'one.ch':'07:30', 'two.ch':'11:30'})
+        calendars = [{**r, 'since':history[0]['date']} for r in proposals]
+        inbox = [event('one.ch', 0, 'success')]
+        status = dict(state='ok', scope=TASK['scope'], last_cycle_at=NOW.isoformat())
+        events = schedule_events(calendars, inbox, status, NOW, ZONE)
+        today = [e for e in events if e['date'][:10] == NOW.date().isoformat()]
+        self.assertEqual({e['client']:e['execution'] for e in today}, {'one.ch':'success', 'two.ch':'warning'})
+
+    def test_client_and_check_type_are_independent_in_table(self):
+        history = [event(domain, 0, 'failure') for domain in ('one.ch','two.ch')]
+        for m in history:
+            m['task_events'][0]['task_key'] = 'pbs|nas|garbage-collection|archive'
+        rows = checks(derive_state(history)[0].values(), history, NOW, ZONE)
+        self.assertEqual({r['client'] for r in rows}, {'one.ch','two.ch'})
+        self.assertEqual({r['check_type'] for r in rows}, {'Nettoyage PBS'})
+
+    def test_security_observations_stay_with_their_sender(self):
+        history = [event(domain, 0, 'success') for domain in ('one.ch','two.ch')]
+        for m in history:
+            m['observations'] = [{'key':'wazuh|nas|42', 'summary':'Détection'}]
+        observations = derive_state(history)[1].values()
+        self.assertEqual({o['client']:o['reports_seen'] for o in observations}, {'one.ch':1, 'two.ch':1})
