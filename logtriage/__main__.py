@@ -85,11 +85,14 @@ def health(directory):
 
 
 def run_cycle(config, store, rules):
+    from .settings import load_settings
+    options = load_settings(store.directory)
+    report_config = {**rules.get("report", {}), "window_hours": options["window_hours"], "max_groups": options["max_groups"]}
     status = {"last_cycle_at": now(), "poll_seconds": config.interval,
               "mode": "read_only", "state": "error"}
     try:
         stats = poll(config, store, rules)
-        summary = store.export(os.environ.get("TZ", "Europe/Zurich"), rules.get("report"))
+        summary = store.export(os.environ.get("TZ", "Europe/Zurich"), report_config)
         status.update(last_cycle_at=now(), last_success_at=now(),
                       state="degraded" if stats["failures"] or stats["skipped"] else "ok",
                       collection=stats, summary=summary)
@@ -101,7 +104,7 @@ def run_cycle(config, store, rules):
         status["error_type"] = type(exc).__name__
         LOG.error("Collecte impossible (%s). Vérifie la connexion et la configuration.", type(exc).__name__)
         # Les résultats des messages déjà importés restent consultables.
-        store.export(os.environ.get("TZ", "Europe/Zurich"), rules.get("report"))
+        store.export(os.environ.get("TZ", "Europe/Zurich"), report_config)
     atomic_json(store.directory / "status.json", status)
     return status["state"] == "ok"
 
@@ -109,7 +112,7 @@ def run_cycle(config, store, rules):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Tri des logs email en lecture seule")
     sub = parser.add_subparsers(dest="command", required=True)
-    for cmd in ("watch", "once", "export", "health"):
+    for cmd in ("watch", "once", "export", "health", "web"):
         sub.add_parser(cmd)
     importer = sub.add_parser("import-eml")
     importer.add_argument("directory", type=Path)
@@ -118,6 +121,17 @@ def main(argv=None):
     directory = Path(os.environ.get("DATA_DIR", "/data"))
     if args.command == "health":
         return health(directory)
+    if args.command == "web":
+        from .web import start
+        server = start(directory)
+        stopped = threading.Event()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, lambda *_: stopped.set())
+        stopped.wait()
+        server.application.stopped.set()
+        server.shutdown()
+        server.server_close()
+        return 0
     store = None
     try:
         rules = load_rules()
@@ -146,13 +160,24 @@ def main(argv=None):
         stop = threading.Event()
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
-        LOG.info("Démarrage en lecture seule : collecte toutes les %s secondes, aucun envoi.", config.interval)
+        web_server = None
+        if os.environ.get("WEB_ENABLED", "false").lower() == "true":
+            from .web import start
+            web_server = start(directory)
+        LOG.info("Démarrage en lecture seule : collecte toutes les %s secondes ; envoi uniquement à la demande.", config.interval)
         while not stop.is_set():
+            from .settings import load_settings
+            config.interval = load_settings(directory)["poll_seconds"]
+            rules = load_rules()
             run_cycle(config, store, rules)
             status = json.loads((store.directory / "status.json").read_text())
             # Vider l'import et les réanalyses par lots, puis reprendre le rythme normal.
             pending = status.get("collection", {}).get("pending", 0)
             stop.wait(min(5, config.interval) if status["state"] == "ok" and pending else config.interval)
+        if web_server:
+            web_server.application.stopped.set()
+            web_server.shutdown()
+            web_server.server_close()
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
         LOG.error("Configuration ou fichier invalide (%s). Consulte le guide de démarrage.", type(exc).__name__)

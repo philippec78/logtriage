@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Logtriage</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+<a class="skip" href="#content">Aller au contenu</a>
+<div id="login-view" class="login" hidden>
+  <h1>Logtriage</h1><p>Connecte-toi pour consulter les bilans et préparer un rapport.</p>
+  <form id="login-form"><label for="username">Identifiant</label><input id="username" name="username" autocomplete="username" required value="admin">
+    <label for="password">Mot de passe</label><input id="password" name="password" type="password" autocomplete="current-password" required>
+    <p id="login-error" class="error" role="alert"></p><button class="primary" type="submit">Se connecter</button>
+  </form>
+</div>
+<div id="application" hidden>
+  <header><a href="#bilan" class="brand">Logtriage</a><nav aria-label="Navigation principale"><a href="#bilan" data-view="bilan">Bilan</a><a href="#rapport" data-view="rapport">Envoyer un rapport</a><a href="#reglages" data-view="reglages">Réglages</a></nav><button id="logout" class="quiet" type="button">Se déconnecter</button></header>
+  <main id="content" tabindex="-1">
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <section id="view-bilan" class="view" aria-labelledby="bilan-title">
+      <div class="page-heading"><div><h1 id="bilan-title">Bilan des serveurs</h1><p id="collection-status">Chargement de la collecte…</p></div><button id="refresh" type="button">Actualiser</button></div>
+      <dl class="summary"><div><dt>Emails analysés</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
+      <div class="section-heading"><h2>Dernier bilan disponible</h2><a href="#rapport">Préparer un envoi</a></div>
+      <p>La boîte est consultée en lecture seule. Les réussites habituelles restent dans l’historique.</p>
+      <pre id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</pre>
+    </section>
+    <section id="view-rapport" class="view" hidden aria-labelledby="rapport-title">
+      <div class="page-heading"><div><h1 id="rapport-title">Envoyer un rapport</h1><p>Prépare le bilan, relis-le, puis envoie cet aperçu.</p></div></div>
+      <div class="report-layout"><div>
+        <div class="section-heading"><h2>Aperçu de l’email</h2><span id="preview-date"></span></div>
+        <dl id="mail-headers" class="mail-headers" hidden><div><dt>À</dt><dd id="preview-to"></dd></div><div><dt>Objet</dt><dd id="preview-subject"></dd></div></dl>
+        <div id="ai-warning" class="notice" role="status" hidden></div>
+        <pre id="report-preview" class="report-text empty">Aucun rapport préparé. Choisis le type de bilan, puis prépare l’aperçu.</pre>
+      </div><aside class="send-controls" aria-label="Préparation et envoi">
+        <h2>Préparation</h2><p id="recipient-summary"></p><a href="#reglages">Modifier les réglages d’envoi</a>
+        <label class="checkbox"><input id="use-ai" type="checkbox"> Ajouter les vérifications proposées par ChatGPT</label>
+        <p id="ai-plan-status" class="muted"></p><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gérer l’utilisation ChatGPT</a>
+        <button id="prepare" type="button" class="primary">Préparer le rapport</button>
+        <div class="send-block"><p id="delivery-status" role="status">Aucun envoi effectué depuis cet aperçu.</p><button id="send" type="button" disabled>Envoyer cet aperçu</button></div>
+        <p id="last-send" class="muted"></p>
+      </aside></div>
+    </section>
+    <section id="view-reglages" class="view" hidden aria-labelledby="reglages-title">
+      <div class="page-heading"><div><h1 id="reglages-title">Réglages</h1><p>Les modifications sont conservées après le redémarrage du conteneur.</p></div></div>
+      <form id="settings-form">
+        <fieldset><legend>Bilan et collecte</legend><div class="fields">
+          <div><label for="window_hours">Période du bilan</label><select id="window_hours" name="window_hours"><option value="24">Dernières 24 heures</option><option value="48">Dernières 48 heures</option><option value="168">Derniers 7 jours</option><option value="720">Derniers 30 jours</option></select></div>
+          <div><label for="max_groups">Nombre maximal de points affichés</label><input id="max_groups" name="max_groups" type="number" min="1" max="100" required></div>
+          <div><label for="poll_seconds">Intervalle de collecte, en secondes</label><input id="poll_seconds" name="poll_seconds" type="number" min="30" max="86400" required><p class="hint">Appliqué après le cycle de collecte en cours.</p></div>
+          <div><span class="field-label">Boîte consultée</span><p id="mailbox-description" class="read-only"></p><p class="hint">L’accès IMAP reste en lecture seule.</p></div>
+        </div></fieldset>
+        <fieldset><legend>Envoi des rapports</legend><div class="fields">
+          <div><label for="recipient">Destinataire</label><input id="recipient" name="recipient" type="email" autocomplete="email" required></div>
+          <div><label for="sender">Expéditeur</label><input id="sender" name="sender" type="email" autocomplete="email" required></div>
+          <div><label for="smtp_host">Serveur SMTP</label><input id="smtp_host" name="smtp_host" autocomplete="off" spellcheck="false" required></div>
+          <div><label for="smtp_port">Port SMTP avec TLS</label><input id="smtp_port" name="smtp_port" type="number" min="1" max="65535" required></div>
+        </div><label class="checkbox"><input id="use_imap_credentials" name="use_imap_credentials" type="checkbox"> Utiliser les identifiants IMAP pour l’envoi SMTP</label><p class="hint">Sinon, les identifiants SMTP doivent être configurés sur le serveur. Aucun mot de passe n’est affiché ici.</p></fieldset>
+        <fieldset><legend>Analyse avec ChatGPT</legend>
+          <p id="chatgpt-status">Aucun compte connecté.</p>
+          <div class="account-actions"><select id="account-picker" aria-label="Compte ChatGPT"><option value="">Ajouter un compte</option></select><button id="connect-chatgpt" type="button" data-oai-siwc-button>Continuer avec ChatGPT</button><button id="disconnect-chatgpt" type="button">Déconnecter ce compte</button></div>
+          <p id="connection-help" class="notice" hidden>Ouvre le fichier ZIP téléchargé, puis double-clique sur « logtriage-chatgpt.command » sur ton Mac. Autorise logtriage dans ChatGPT, puis reviens ici. Cette autorisation expire après dix minutes. Aucun mot de passe ChatGPT ne doit être saisi dans logtriage.</p>
+          <p>Les requêtes IA utiliseront ton abonnement ChatGPT et ses limites. Seuls le bilan et les extraits utiles seront transmis à OpenAI.</p>
+          <p><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gérer l’utilisation et l’accès dans ChatGPT</a></p>
+          <div class="fields"><div><label for="ai_model">Modèle de ton compte</label><select id="ai_model" name="ai_model"><option value="">Sélectionne un modèle</option></select><button id="load-models" type="button" class="model-refresh">Actualiser les modèles</button></div>
+          <div><label class="checkbox"><input id="ai_enabled" name="ai_enabled" type="checkbox"> Autoriser l’analyse avec mon abonnement ChatGPT</label><p class="hint">L’analyse démarre uniquement quand tu prépares un rapport avec ChatGPT.</p></div></div>
+          <label for="ai_instructions">Préférences de rédaction — facultatif</label><textarea id="ai_instructions" name="ai_instructions" rows="3" maxlength="1500" placeholder="Exemple : donner la priorité aux sauvegardes et proposer une vérification courte par incident."></textarea>
+        </fieldset>
+        <div class="form-actions"><button id="save-settings" class="primary" type="submit">Enregistrer les réglages</button><p id="settings-status" role="status" aria-live="polite"></p></div>
+      </form>
+    </section>
+  </main><footer><span id="version"></span><span>Envoi à la demande · Accès IMAP en lecture seule</span></footer>
+</div>
+<dialog id="plan-welcome"><h2>Tu utilises ton abonnement ChatGPT</h2><p>Les analyses demandées dans logtriage utilisent ton abonnement et ses limites. Tu peux gérer l’accès et l’utilisation depuis les réglages ChatGPT.</p><form method="dialog"><button class="primary">Compris</button></form></dialog>
+</body></html>

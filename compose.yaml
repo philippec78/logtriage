@@ -21,6 +21,18 @@ services:
       DATA_DIR: /data
       RULES_FILE: /app/config/rules.json
       TZ: Europe/Zurich
+      WEB_ENABLED: "true"
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-https://localhost:8448}
+      WEB_TLS_NAMES: ${WEB_TLS_NAMES:-}
+      WEB_USER: ${WEB_USER:-admin}
+      WEB_PASSWORD: ${WEB_PASSWORD:-}
+      REPORT_TO: ${REPORT_TO:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_IMAP_CREDENTIALS: ${SMTP_USE_IMAP_CREDENTIALS:-false}
+    ports:
+      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-8448}:8448"
     volumes:
       - triage-data:/data
     read_only: true

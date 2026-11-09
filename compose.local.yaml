@@ -10,6 +10,11 @@ services:
       RULES_FILE: /app/config/rules.json
       IMAP_PASSWORD_FILE: /run/secrets/imap_password
       TZ: Europe/Zurich
+      WEB_ENABLED: "true"
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-https://localhost:8448}
+      WEB_TLS_NAMES: ${WEB_TLS_NAMES:-}
+    ports:
+      - "${WEB_BIND_IP:-127.0.0.1}:${WEB_PORT:-8448}:8448"
     secrets:
       - imap_password
     volumes:

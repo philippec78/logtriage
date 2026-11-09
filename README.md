@@ -1,6 +1,6 @@
 # Tri des emails de logs — Docker, lecture seule
 
-Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve les résultats dans un volume Docker. Il produit des fichiers JSON et un bilan texte. Il n’a pas d’interface web ni de port à exposer.
+Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve les résultats dans un volume Docker. La version 0.3 ajoute une interface web HTTPS protégée, des réglages persistants, un aperçu avant envoi et une analyse facultative avec ton abonnement ChatGPT.
 
 La version 0.2 reconnaît aussi les rapports Proxmox VE/PBS/Mail Gateway, les alertes Wazuh individuelles, les notifications Synology de stockage, instantanés, mises à jour et sécurité, ainsi que les états d’onduleur et les compteurs Kyocera rencontrés dans la boîte. Les messages administratifs et les bulletins sont identifiés séparément.
 
@@ -31,6 +31,60 @@ Le mot de passe est enregistré dans la configuration de la stack et transmis au
 Clique ensuite sur **Deploy the stack**. Pour une stack Git existante, actualise ses variables puis utilise **Pull and redeploy** pour récupérer le dépôt corrigé. L’image `imap-log-triage:local` est construite depuis le dépôt, pas téléchargée depuis un registre. L’option de rechargement forcé d’une image depuis un registre (**Re-pull image**) n’est pas nécessaire. Le volume `triage-data` et les protections de lecture seule sont conservés.
 
 Le fichier utilise `pull_policy: build` afin de reconstruire le moteur et ses règles lors du déploiement. Sur Docker Swarm, il faut une image préconstruite disponible pour les nœuds ; ce fichier de construction Standalone n’est pas un fichier de déploiement Swarm.
+
+## Interface web et connexion avec ChatGPT
+
+Dans Portainer, ajoute ces variables **avant le redéploiement** :
+
+| Variable | Valeur |
+|---|---|
+| `WEB_BIND_IP` | Adresse privée du serveur accessible depuis ton réseau ; `127.0.0.1` par défaut |
+| `WEB_PUBLIC_URL` | Adresse exacte de la page, par exemple `https://192.0.2.10:8448` ; utilise l’adresse réelle de ton serveur |
+| `WEB_PORT` | `8448` par défaut |
+| `REPORT_TO` | Ton adresse destinataire |
+| `SMTP_HOST` | Ton serveur SMTP |
+| `SMTP_PORT` | `465` pour SMTP sur TLS implicite |
+| `SMTP_USE_IMAP_CREDENTIALS` | `true` uniquement si tu autorises la réutilisation des identifiants IMAP |
+
+N’utilise pas `0.0.0.0` comme adresse de publication sur une machine exposée à Internet. Cette interface d’administration est prévue pour ton réseau privé ou un accès VPN. `WEB_PUBLIC_URL` doit correspondre exactement à l’adresse ouverte, y compris son port : les contrôles d’origine, le certificat local et l’assistant ChatGPT l’utilisent.
+
+L’identifiant web initial est `admin`. Le mot de passe aléatoire est généré dans le volume, jamais affiché dans les logs. Dans la console Portainer du conteneur, avec l’utilisateur `10001`, affiche-le avec :
+
+```sh
+cat /data/private/web-initial-password.txt
+```
+
+Tu peux aussi fournir `WEB_USER` et un `WEB_PASSWORD` d’au moins 12 caractères **lors du premier démarrage web**. Le compte est ensuite conservé dans le volume ; changer cette variable ne réinitialise pas un compte existant. Les mots de passe sont hachés avec PBKDF2 ; les fichiers privés sont en mode 0600 et leur dossier en 0700.
+
+Le certificat HTTPS est généré localement avec le nom ou l’adresse de `WEB_PUBLIC_URL`. Ton navigateur peut demander que tu valides ce certificat local. Effectue toi-même cette validation après avoir vérifié l’adresse du serveur. Un changement du nom d’accès peut entraîner son renouvellement. Aucun contrôle TLS d’OpenAI, de l’IMAP ou du SMTP n’est désactivé.
+
+### Utiliser la page
+
+- **Bilan** : état de la collecte, nombre d’emails analysés et dernier bilan déterministe.
+- **Réglages** : période du rapport, nombre de points, intervalle de collecte, destinataire, expéditeur, SMTP et compte/modèle ChatGPT. Les réglages d’IMAP et ses secrets restent dans Portainer.
+- **Envoyer un rapport** : préparer un aperçu classique ou enrichi par ChatGPT, le relire, puis cliquer sur **Envoyer cet aperçu**. Aucun email n’est envoyé par la simple préparation.
+
+L’aperçu est figé pendant 15 minutes. Un changement de réglages impose une nouvelle préparation. Le même aperçu n’est pas renvoyé deux fois. Si un envoi reste incertain, vérifie ta boîte : il n’est jamais réessayé automatiquement. La confirmation signifie « accepté par le SMTP », pas « livré au destinataire ».
+
+### Autoriser ton abonnement ChatGPT
+
+Cette intégration utilise le parcours officiel **Sign in with ChatGPT** pour les outils personnels/ouverts auto-hébergés, et non une clé API ni une session de navigateur copiée. L’accès dépend de l’éligibilité de ton compte et de ton autorisation effective.
+
+1. Dans **Réglages → Analyse avec ChatGPT**, choisis **Ajouter un compte**, puis **Continuer avec ChatGPT**.
+2. Sur ton Mac, ouvre le ZIP téléchargé, puis le fichier `logtriage-chatgpt.command`. Python 3 doit être disponible. L’assistant ouvre un retour local sur `127.0.0.1`, puis le navigateur OpenAI.
+3. Connecte-toi à ChatGPT et autorise logtriage. Le code de retour est transmis au serveur par HTTPS. Les jetons d’accès et de renouvellement sont échangés et conservés uniquement sur le serveur, pas sur ton Mac.
+4. Reviens dans les réglages, clique sur **Actualiser les modèles**, sélectionne un modèle de ton compte, active l’analyse puis enregistre.
+5. Dans l’onglet d’envoi, coche l’analyse ChatGPT et prépare un rapport.
+
+L’assistant est temporaire : l’autorisation doit être terminée dans les dix minutes. Le serveur renouvelle ensuite ses jetons et peut fonctionner lorsque ton Mac est éteint. Une révocation ou une session expirée peut demander une reconnexion. Les comptes enregistrés restent séparés ; tu peux en sélectionner un ou le déconnecter. En cas de révocation distante non confirmée, retire également l’accès depuis ChatGPT.
+
+Les requêtes utilisent `https://api.openai.com/v1/responses`, avec `store:false`, `stream:true` et un modèle découvert dans le catalogue du compte connecté. Les exigences et limitations du parcours SIWC sont respectées. Le modèle peut appeler uniquement quatre fonctions locales de lecture : bilan, liste d’événements, preuves d’un événement et historique de la même tâche. Pas de shell, pas d’outil d’envoi, pas d’écriture IMAP, pas de recherche web ni de lien d’email ouvert.
+
+Les statuts, compteurs, titres et avertissements du bilan sont conservés. L’IA ajoute des vérifications courtes rattachées aux identifiants existants ; elle ne supprime pas les faits. Ses propositions doivent être relues : leur justesse sémantique n’est pas garantie par la validation de structure. L’analyse est limitée à quatre tours et dix appels d’outils. Une erreur, une limite d’abonnement, un flux incomplet ou un résultat invalide conserve le bilan classique et affiche la raison dans l’aperçu.
+
+Le serveur transmet à OpenAI le bilan et des extraits structurés bornés, avec retrait des liens et des secrets évidents. Les noms de serveurs et les preuves utiles peuvent rester présents ; ce filtrage ne garantit pas l’anonymisation de toute donnée. Les identifiants IMAP/SMTP et les emails bruts ne sont jamais fournis comme contexte au modèle. Les jetons ChatGPT ne sont jamais retournés à la page web.
+
+Références officielles : [autorisation SIWC](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), [serveurs auto-hébergés](https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms), [modèles et requêtes](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [limites actuelles](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
 
 ## Démarrage local avec un fichier secret
 
@@ -80,7 +134,7 @@ Le dossier `/data/exports` contient :
 | `bilan.txt` | Bilan courant lisible, incluant les tâches encore en échec |
 | `daily/AAAA-MM-JJ.txt` | Dernier bilan disponible pour chaque journée, en heure suisse |
 
-Le bilan est actualisé à chaque collecte. Il affiche les problèmes des dernières 24 heures et les rétablissements récents. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés à part. Les observations de faible sévérité restent dans les exports détaillés. Il n’est envoyé à personne. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
+Le bilan est actualisé à chaque collecte. Il affiche les problèmes des dernières 24 heures et les rétablissements récents. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés à part. Les observations de faible sévérité restent dans les exports détaillés. Aucun envoi n’est programmé : tu peux préparer puis envoyer un aperçu depuis la page web, ou utiliser la commande SMTP. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
 
 Les références IMAP incluent une identité de compte hachée, le dossier, UIDVALIDITY et UID. Le Message-ID et l’empreinte SHA-256 sont aussi conservés. Un changement de UIDVALIDITY réimporte les références sans recompter les emails identiques. Deux messages de même Message-ID mais de contenu différent restent distincts. L’état des tâches est recalculé dans l’ordre des dates des emails pour supporter les imports tardifs ; un échec et une réussite à la même seconde maintiennent l’échec ouvert.
 
@@ -90,7 +144,7 @@ Le code impose l’ouverture avec `EXAMINE` (`readonly=True`) et la récupérati
 
 La garantie porte sur les opérations du service : un autre client ou une règle du serveur peut toujours modifier la boîte. Si ton serveur permet un compte ou des droits IMAP limités à la lecture, utilise-les en complément. Il n’existe pas d’option pour activer l’écriture dans cette version.
 
-Le système de fichiers du conteneur est aussi monté en lecture seule, à l’exception du volume local de résultats et de `/tmp`. Le service n’écoute sur aucun port. Les erreurs de connexion n’affichent pas les réponses détaillées du serveur ni le mot de passe.
+Le système de fichiers du conteneur est aussi monté en lecture seule, à l’exception du volume local de résultats et de `/tmp`. L’interface écoute sur 8448 dans le conteneur ; sa publication est limitée à l’hôte par défaut. Les erreurs de connexion n’affichent pas les réponses détaillées du serveur ni le mot de passe.
 
 ## Règles incluses
 

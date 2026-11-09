@@ -25,12 +25,12 @@ def email_address(value):
     return address.addr_spec
 
 
-def prepare_report(directory, recipient, sender, current_time=None):
+def prepare_report(directory, recipient, sender, current_time=None, report_text=None):
     recipient, sender = email_address(recipient), email_address(sender)
     current_time = current_time or datetime.now(timezone.utc)
     summary = json.loads((directory / "exports/summary.json").read_text(encoding="utf-8"))
     status = json.loads((directory / "status.json").read_text(encoding="utf-8"))
-    report = (directory / "exports/bilan.txt").read_text(encoding="utf-8")
+    report = report_text if report_text is not None else (directory / "exports/bilan.txt").read_text(encoding="utf-8")
     if not summary.get("total_messages"):
         raise ValueError("Aucun email analysé : attends la première collecte")
     generated = datetime.fromisoformat(summary["generated_at"])

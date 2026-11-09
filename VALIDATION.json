@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 36,
-    "passed": 36,
+    "executed": 55,
+    "passed": 55,
     "real_imap_connection": false
   },
   "sample": {
@@ -32,5 +32,14 @@
     "unrecognized_messages": 0,
     "pending": 0,
     "mailbox_mode": "read_only"
+  },
+  "web": {
+    "http_integration": "passed",
+    "authentication_csrf_origin": "passed",
+    "preview_and_single_send": "passed_with_mocked_SMTP",
+    "responsive_ui": "visually_checked_360px_and_desktop",
+    "live_chatgpt_authorization": "requires_user_consent_not_tested",
+    "oauth": "PKCE, signed JWT verification, scope checks and serialized rotating refresh tested with synthetic credentials",
+    "tls": "private certificate and SAN tested"
   }
 }
