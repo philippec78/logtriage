@@ -28,7 +28,7 @@ def suggestions(messages, options, scope, moment, tz):
             key = event.get("task_key")
             if not key:
                 continue
-            by_day = arrivals[key, message_client(message)]
+            by_day = arrivals[key, message_client(message, event)]
             minute = stamp.hour * 60 + stamp.minute + stamp.second / 60
             if day not in by_day or minute < by_day[day][0]:
                 by_day[day] = (minute, bool(received))

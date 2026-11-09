@@ -106,7 +106,7 @@ def schedule_events(schedules, messages, status, moment, tz):
             continue
         for event in [m, *m.get("task_events", [])]:
             if event.get("task_key"):
-                key = (m["scope"], event["task_key"], message_client(m))
+                key = (m["scope"], event["task_key"], message_client(m, event))
                 arrivals[key][stamp] = m["sha256"]
     events = []
     for row in schedules:

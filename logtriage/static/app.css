@@ -183,3 +183,8 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #detail-mail p {margin:.3rem 0}
 #detail-mail .mail-meta,#detail-mail .mail-subject {font-size:.87rem;color:var(--muted)}
 .mail-points {padding-left:1.3rem;margin:.6rem 0}
+
+#assign-client summary {cursor:pointer;color:var(--primary)}
+#assignment-form {margin:10px 0}
+#assignment-review {margin-top:8px}
+#assignment-checks:empty,#assignment-result:empty {display:none}

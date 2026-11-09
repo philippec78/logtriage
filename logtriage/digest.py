@@ -21,9 +21,9 @@ def derive_state(messages, resolutions=None):
             client = message_client(message)
             events = ([message] if message.get("task_key") else []) + message.get("task_events", [])
             for event in events:
-                identity = (message["scope"], event["task_key"], client)
+                identity = (message["scope"], event["task_key"], message_client(message, event))
                 task = tasks.setdefault(identity, {
-                    "key": event["task_key"], "client": client, "scope": message["scope"], "state": "unknown",
+                    "key": event["task_key"], "client": identity[2], "scope": message["scope"], "state": "unknown",
                     "failures": [], "last_failure": None, "last_success": None,
                     "active_occurrences": 0, "last_problem": None, "resolved_at": None})
                 task.update(last_message_date=message["date"], latest_category=message["category"],

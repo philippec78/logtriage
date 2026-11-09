@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import __version__
 from .check_types import check_service
+from .assignments import review_assignment
 from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
@@ -284,10 +285,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == "/api/settings":
                 save_settings(self.app.directory, values)
                 return self.reply(200, {"ok": True})
+            if path == "/api/assignments/preview":
+                return self.reply(200, review_assignment(self.app.directory, values))
             if path == "/api/rules/test":
                 return self.reply(200, simulate(self.app.directory, values))
-            if path in ("/api/schedules/activate", "/api/schedules/save", "/api/schedules/remove", "/api/rules/activate", "/api/rules/remove"):
-                if path == "/api/schedules/activate":
+            if path in ("/api/assignments/save", "/api/schedules/activate", "/api/schedules/save", "/api/schedules/remove", "/api/rules/activate", "/api/rules/remove"):
+                if path == "/api/assignments/save":
+                    review_assignment(self.app.directory, values, save=True)
+                elif path == "/api/schedules/activate":
                     activate_suggestions(self.app.directory, values.get("tokens"))
                 elif path == "/api/schedules/save":
                     schedule(self.app.directory, values)

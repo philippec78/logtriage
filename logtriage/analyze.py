@@ -329,6 +329,10 @@ def analyze(raw, rules):
     # Même identifiant pour un rapport direct et une copie transmise par CMS.
     if "echec" == result["category"] and not result["evidence"]:
         result["evidence"] = [subject]
+    if result.get("format") == "account-security-notice":
+        from .clients import github_login, sender_domain
+        if sender_domain(sender) == "github.com":
+            result["github_login"] = github_login(plain or html)
     if result["task_key"] and not result.get("task_events"):
         result["report_fields"] = report_fields(plain or html)
     return result

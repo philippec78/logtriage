@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from .calendar_suggestions import suggestions
 from .check_types import check_service, check_type
-from .clients import message_client
+from .clients import assign_clients, message_client
 from .dashboard import checks
 from .digest import day_messages, derive_state, render_digest
 from .user_rules import apply_rules
@@ -32,9 +32,11 @@ def daily_counts(messages, moment, tz):
     today = day_messages(messages, moment, tz)
     by_client = {}
     for message in today:
-        counts = by_client.setdefault(message_client(message), {"messages": 0, "unknown": 0})
-        counts["messages"] += 1
-        counts["unknown"] += not message.get("recognized")
+        events = [e for e in [message, *message.get("task_events", [])] if e.get("task_key")]
+        for client in {message_client(message, e) for e in events} or {message_client(message)}:
+            counts = by_client.setdefault(client, {"messages": 0, "unknown": 0})
+            counts["messages"] += 1
+            counts["unknown"] += not message.get("recognized")
     return {"clients_today": by_client, "report_day": moment.astimezone(ZoneInfo(tz)).date().isoformat(), "today_messages": len(today),
             "today_unknown": sum(not m.get("recognized") for m in today)}
 
@@ -133,8 +135,10 @@ class Store:
         config = policy(self.directory)
         status = collection_status if collection_status is not None else read_json(self.directory / "status.json", {})
         messages = [apply_rules(m, config["rules"]) for m in messages] if config["rules"] else messages
+        if config.get("assignments"):
+            assign_clients(messages, config["assignments"])
         if any("client" not in row for row in config["schedules"]):
-            options = task_options({"scope": m["scope"], "key": e["task_key"], "client": message_client(m)}
+            options = task_options({"scope": m["scope"], "key": e["task_key"], "client": message_client(m, e)}
                                    for m in messages for e in [m, *m.get("task_events", [])] if e.get("task_key"))
             config = bind_old_schedules(self.directory, options, moment)
         scheduled = schedule_events(config["schedules"], messages, status, moment, tz)

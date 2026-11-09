@@ -290,8 +290,44 @@ $('client-filter').addEventListener('change', () => {
 });
 $('type-filter').addEventListener('change', () => renderClientView(current));
 let detailRequest = 0;
+let assignmentId = '', assignmentToken = '';
+function clearAssignment() {
+  assignmentToken = '';
+  $('assignment-save').hidden = true;
+  $('assignment-result').textContent = '';
+  $('assignment-checks').replaceChildren();
+}
+$('assignment-client').addEventListener('input', clearAssignment);
+async function submitAssignment(save) {
+  const id = assignmentId, client = $('assignment-client').value.trim(), request = detailRequest;
+  const submit = save ? $('assignment-save') : $('assignment-review');
+  submit.disabled = true;
+  try {
+    if (!save) clearAssignment();
+    const result = await api('/api/assignments/'+(save ? 'save' : 'preview'), {detail_id:id, client, token:assignmentToken});
+    if (save) {
+      if (request === detailRequest) $('check-detail').close();
+      await refresh(true);
+      notice('Attribution enregistrée pour '+client+'.');
+    } else if (request === detailRequest && $('assignment-client').value.trim() === client) {
+      assignmentToken = result.token;
+      $('assignment-result').textContent = result.criterion+' · '+result.count+' mail(s) dans l’historique.';
+      $('assignment-checks').replaceChildren(...result.checks.map(key => element('li','',key.split('|').join(' · '))));
+      $('assignment-save').hidden = false;
+    }
+  } catch (error) {
+    if (request === detailRequest) { clearAssignment(); $('assignment-result').textContent = error.message; }
+  } finally { submit.disabled = false; }
+}
+$('assignment-form').addEventListener('submit', event => { event.preventDefault(); submitAssignment(false); });
+$('assignment-save').addEventListener('click', () => submitAssignment(true));
 async function showMailDetail(id) {
   const request = ++detailRequest;
+  clearAssignment();
+  $('assign-client').hidden = true;
+  $('assign-client').open = false;
+  $('assignment-client').value = '';
+  assignmentId = id;
   const box = $('detail-mail'), title = $('detail-mail-title');
   title.textContent = 'Résumé du mail';
   box.textContent = id ? 'Chargement du résumé…' : 'Le détail du mail est indisponible.';
@@ -302,6 +338,11 @@ async function showMailDetail(id) {
     title.textContent = detail.kind === 'schedule' ? 'Suivi du rapport attendu' : 'Résumé du mail';
     box.replaceChildren(element('p','mail-summary',detail.summary || 'Résumé indisponible.'));
     if (detail.kind !== 'mail') return;
+    if (detail.assignment_source) {
+      $('assign-client').hidden = false;
+      const clients = Array.from($('client-filter').options).map(o => o.value).filter(v => v && v !== '*');
+      $('client-names').replaceChildren(...clients.map(name => new Option(name,name)));
+    }
     const meta = element('p','mail-meta','Mail du '+date(detail.date)+' · '+(executionLabels[detail.execution] || 'À confirmer'));
     box.append(meta);
     if (detail.subject) box.append(element('p','mail-subject','Objet : '+detail.subject));

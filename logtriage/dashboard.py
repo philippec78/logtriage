@@ -1,7 +1,7 @@
 """Lecture compacte des contrôles, de leur dernier signal et de leur historique du jour."""
 from collections import defaultdict, deque
 from .check_types import check_service, check_type
-from .clients import message_client
+from .clients import assignment_source, message_client
 from .digest import day_bounds, readable
 from .monitoring import identity
 
@@ -27,7 +27,7 @@ def mail_detail(message, event):
             if len(points) == 5:
                 break
     return {"kind": "mail", "subject": subject, "summary": summary, "date": message["date"],
-            "execution": event["execution"], "points": points}
+            "execution": event["execution"], "points": points, "assignment_source": assignment_source(message, event)}
 
 
 def checks(tasks, messages, moment, tz):
@@ -37,7 +37,7 @@ def checks(tasks, messages, moment, tz):
     for m in sorted(messages, key=lambda row: row["date"]):
         for e in [m, *m.get("task_events", [])]:
             if e.get("task_key"):
-                key = (m["scope"], e["task_key"], message_client(m))
+                key = (m["scope"], e["task_key"], message_client(m, e))
                 sources[(*key, m.get("sha256"))] = (m, e)
                 if start <= m["date"] <= end:
                     history[key].append([m["date"], e["execution"]])

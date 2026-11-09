@@ -142,7 +142,7 @@ class WebReports:
                 open_keys = {(t["scope"], t["key"], t.get("client", "")) for t in tasks if t["state"] in ("open", "warning")}
                 history = [m for m in messages if m["sha256"] in today_ids
                            or (m["scope"], m.get("task_key"), message_client(m)) in open_keys
-                           or any((m["scope"], e["task_key"], message_client(m)) in open_keys for e in m.get("task_events", []))]
+                           or any((m["scope"], e["task_key"], message_client(m, e)) in open_keys for e in m.get("task_events", []))]
                 notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, history,
                                            settings["ai_instructions"], profile=profile).run()
                 report = annotate(report, notes)

@@ -105,3 +105,22 @@ class ClientTests(unittest.TestCase):
             self.assertNotIn('autre VM', detail['points'])
             self.assertNotIn('secret123', str(detail))
             self.assertEqual(detail['date'], history[0]['date'])
+
+    def test_assignments_are_private_to_mailbox_source_device_and_account(self):
+        from logtriage.clients import assignment_source, assign_clients, message_client
+        def source(key, **fields):
+            return dict(scope='imap:demo', sender='relay@vendor.test', task_key=key, sha256='id', **fields)
+        ups = source('ups-monitoring|ups01 - "standard plan expires on jan 1"')
+        next_date = source('ups-monitoring|ups01 – other date')
+        nas = source('synology-dsm-update|nas-1')
+        other = source('synology-dsm-update|nas-10')
+        gh = dict(source('account-security|github|please verify your device'), sender='auto@github.com', github_login='alice')
+        other_gh = dict(gh, github_login='bob')
+        parent = source('')
+        parent['task_events'] = [{'task_key':'pve|server|vm-backup|1'}, {'task_key':'pve|server|vm-backup|2'}]
+        rules = [dict(source=assignment_source(m,e),client='client-a') for m,e in
+                 [(ups,ups),(nas,nas),(gh,gh),(parent,parent['task_events'][0])]]
+        assign_clients([next_date, nas, other, gh, other_gh, parent],rules)
+        self.assertEqual([message_client(m) for m in (next_date,nas,other,gh,other_gh)],
+                         ['client-a','client-a','vendor.test','client-a','github.com'])
+        self.assertEqual([message_client(parent,e) for e in parent['task_events']],['client-a','vendor.test'])

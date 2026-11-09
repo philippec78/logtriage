@@ -144,6 +144,14 @@
 </div>
 <dialog id="check-detail" aria-labelledby="detail-title">
   <h2 id="detail-title"></h2><p id="detail-context"></p><section aria-labelledby="detail-mail-title"><h3 id="detail-mail-title">Résumé du mail</h3><div id="detail-mail" role="status"></div></section>
+  <details id="assign-client" hidden><summary>Attribuer à un client</summary>
+    <form id="assignment-form"><label for="assignment-client">Client destinataire</label>
+      <input id="assignment-client" list="client-names" maxlength="80" required><datalist id="client-names"></datalist>
+      <button type="submit" id="assignment-review">Voir les contrôles concernés</button>
+      <p id="assignment-result" role="status"></p><ul id="assignment-checks"></ul>
+      <button type="button" id="assignment-save" hidden>Appliquer l’attribution</button>
+    </form>
+  </details>
   <h3>Signaux du jour</h3>
   <div id="detail-history"></div><form method="dialog"><button autofocus>Fermer</button></form>
 </dialog>
