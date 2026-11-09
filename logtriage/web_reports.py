@@ -73,15 +73,16 @@ class WebReports:
     def preview(self, use_ai):
         self._background(("preview", lambda: self._preview(use_ai)))
 
-    def resolve(self, signal):
-        if not isinstance(signal, str) or not re.fullmatch(r"[0-9a-f]{64}", signal):
-            raise ValueError("Sélectionne un incident ouvert.")
+    def resolve(self, signals):
+        if not isinstance(signals, list) or not signals or any(
+                not isinstance(signal, str) or not re.fullmatch(r"[0-9a-f]{64}", signal) for signal in signals):
+            raise ValueError("Coche au moins un incident ouvert.")
         if not self.lock.acquire(blocking=False):
             raise ValueError("Un rapport est en cours de préparation ou d’envoi. Réessaie ensuite.")
         try:
             store = Store(self.directory)
             try:
-                store.export(os.environ.get("TZ", "Europe/Zurich"), load_settings(self.directory), resolve_signal=signal)
+                store.export(os.environ.get("TZ", "Europe/Zurich"), load_settings(self.directory), resolve_signals=signals)
             finally:
                 store.close()
         finally:

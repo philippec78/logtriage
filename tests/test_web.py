@@ -153,6 +153,31 @@ class WebTests(unittest.TestCase):
             self.assertEqual(smtp.call_args.args[0].get_content(), preview["body"])
             self.assertEqual(self.request("/api/send", {"id": preview["id"]})[0], 400)
 
+    def test_bulk_resolution_is_atomic_idempotent_and_only_affects_checked_rows(self):
+        self.fixture()
+        store = Store(self.directory)
+        try:
+            for name in ("archives", "certificats"):
+                mail = EmailMessage()
+                mail["Subject"] = "[NAS] Le planificateur de tâches a terminé une tâche planifiée"
+                mail["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
+                mail.set_content(f"Tâche : {name}\nÉtat actuel : 127\nDe NAS")
+                store.put(name, "test", analyze(mail.as_bytes(), load_rules()))
+            store.export()
+        finally:
+            store.close()
+        self.login()
+        ids = [row["id"] for row in self.request("/api/state")[1]["incidents"]]
+        self.assertEqual(len(ids), 3)
+        for invalid in ([], ids[0], [ids[0], False], [ids[0], "0" * 64]):
+            self.assertEqual(self.request("/api/resolve", {"ids": invalid})[0], 400)
+        self.assertEqual(self.request("/api/state")[1]["summary"]["resolution_count"], 0)
+        for _ in range(2):
+            self.assertEqual(self.request("/api/resolve", {"ids": [ids[0], ids[1], ids[0]]})[0], 200)
+        state = self.request("/api/state")[1]
+        self.assertEqual([row["id"] for row in state["incidents"]], ids[2:])
+        self.assertEqual(state["summary"]["resolution_count"], 2)
+
     def test_manual_resolution_updates_bilan_preview_and_blocks_old_send(self):
         self.fixture()
         self.login()

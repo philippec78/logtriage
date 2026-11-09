@@ -72,11 +72,12 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO refs VALUES (?,?,?)", (reference, scope, result["sha256"]))
         return inserted
 
-    def export(self, tz="Europe/Zurich", report_config=None, resolve_signal=None):
+    def export(self, tz="Europe/Zurich", report_config=None, resolve_signal=None, *, resolve_signals=()):
+        signals = (resolve_signal,) if resolve_signal is not None else resolve_signals
         with locked(self.directory / "export.lock"):
-            return self._export(tz, report_config, resolve_signal)
+            return self._export(tz, report_config, signals)
 
-    def _export(self, tz, report_config, resolve_signal):
+    def _export(self, tz, report_config, signals):
         rows = self.db.execute("SELECT scope,sha,result,imported_at FROM messages").fetchall()
         messages = []
         for scope, sha, payload, imported in rows:
@@ -90,15 +91,16 @@ class Store:
         # un incident dont une réussite plus récente est déjà connue.
         resolutions = dict(self.db.execute("SELECT signal,resolved_at FROM resolutions"))
         tasks, observations = derive_state(messages, resolutions)
-        if resolve_signal is not None and resolve_signal not in resolutions:
-            task = next((t for t in tasks.values() if t["state"] in ("open", "warning")
-                         and t["signal_id"] == resolve_signal), None)
-            if task is None:
-                raise ValueError("Cet incident a changé. Actualise le bilan avant de le valider.")
+        pending_ids = set(signals).difference(resolutions)
+        if pending_ids:
+            open_tasks = {t["signal_id"]: t for t in tasks.values() if t["state"] in ("open", "warning")}
+            if not pending_ids.issubset(open_tasks):
+                raise ValueError("Un incident sélectionné a changé. Vérifie ta sélection avant de réessayer.")
             at = now()
             with self.db:
-                self.db.execute("INSERT INTO resolutions VALUES (?,?,?,?)", (resolve_signal, task["scope"], task["key"], at))
-            resolutions[resolve_signal] = at
+                self.db.executemany("INSERT INTO resolutions VALUES (?,?,?,?)",
+                                    [(key, open_tasks[key]["scope"], open_tasks[key]["key"], at) for key in pending_ids])
+            resolutions.update(dict.fromkeys(pending_ids, at))
             tasks, observations = derive_state(messages, resolutions)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))

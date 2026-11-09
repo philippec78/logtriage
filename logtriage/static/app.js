@@ -44,26 +44,45 @@ function showReport(container, body) {
   }
   container.replaceChildren(fragment);
 }
+function checkedIncidents() {
+  return Array.from($('incident-list').querySelectorAll('input:checked'), input => input.value);
+}
 function incidentSelection() {
-  const selected = current?.incidents?.find(row => row.id === $('incident-picker').value);
-  $('resolve-incident').disabled = !selected || busy || current?.report?.job?.state === 'running';
-  $('incident-detail').textContent = selected ? selected.summary + ' · Dernier signal le ' + date(selected.date) : '';
+  const count = checkedIncidents().length;
+  const button = $('resolve-incident');
+  button.textContent = count ? 'Marquer comme résolu' + (count > 1 ? 's' : '') + ' (' + count + ')' : 'Valider la sélection';
+  button.disabled = !count || busy || current?.report?.job?.state === 'running';
 }
 function renderIncidents(rows) {
-  const picker = $('incident-picker');
+  const list = $('incident-list');
   const fingerprint = JSON.stringify(rows);
-  if (picker.dataset.rows !== fingerprint) {
-    const previous = picker.value;
-    picker.replaceChildren(new Option(rows.length ? 'Choisis un incident' : 'Aucun incident ouvert', ''));
+  if (list.dataset.rows !== fingerprint) {
+    const selected = new Set(checkedIncidents());
+    const focused = list.contains(document.activeElement) ? document.activeElement.value : null;
+    const fragment = document.createDocumentFragment();
     for (const row of rows) {
-      const prefix = row.severity === 'open' ? 'Échec' : 'Avertissement';
-      picker.add(new Option(prefix + ' — ' + row.summary, row.id));
+      const item = document.createElement('li');
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = row.id;
+      checkbox.checked = selected.has(row.id);
+      const text = document.createElement('span');
+      text.textContent = row.summary;
+      const detail = document.createElement('small');
+      detail.textContent = (row.severity === 'open' ? 'Échec' : 'Avertissement') + ' · Dernier signal le ' + date(row.date);
+      text.append(detail);
+      label.append(checkbox, text);
+      item.append(label);
+      fragment.append(item);
     }
-    if (rows.some(row => row.id === previous)) picker.value = previous;
-    picker.dataset.rows = fingerprint;
+    list.replaceChildren(fragment);
+    if (focused) Array.from(list.querySelectorAll('input')).find(input => input.value === focused)?.focus({preventScroll:true});
+    list.dataset.rows = fingerprint;
   }
-  picker.disabled = !rows.length;
   $('incident-count').textContent = '(' + rows.length + ')';
+  $('incident-empty').hidden = rows.length !== 0;
+  $('incident-hint').hidden = $('resolve-incident').hidden = list.hidden = rows.length === 0;
   incidentSelection();
 }
 function render(state) {
@@ -100,17 +119,19 @@ async function refresh(quiet = false) { try {render(await api('/api/state'));} c
 async function action(button, fn) { if(busy) return; busy=true; button.disabled=true; button.setAttribute('aria-busy','true'); notice(''); try{await fn();}catch(error){notice(error.message,true);}finally{busy=false;button.disabled=false;button.removeAttribute('aria-busy');await refresh(true);} }
 $('login-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('login-error').textContent='';try{const result=await api('/api/login',{username:$('username').value,password:$('password').value});csrf=result.csrf;$('password').value='';await refresh();}catch(error){$('login-error').textContent=error.message;}finally{button.disabled=false;}});
 $('logout').addEventListener('click',()=>action($('logout'),async()=>{await api('/api/logout',{});current=null;settingsDirty=false;settingsLoaded=false;$('application').hidden=true;$('login-view').hidden=false;}));
-$('incident-picker').addEventListener('change', incidentSelection);
+$('incident-list').addEventListener('change', () => {
+  $('resolution-status').textContent = '';
+  incidentSelection();
+});
 $('manage-incidents').addEventListener('click', () => {
-  $('incident-panel').open = true;
-  requestAnimationFrame(() => $('incident-picker').focus());
+  requestAnimationFrame(() => $('incident-heading').focus());
 });
 $('resolve-incident').addEventListener('click', () => {
-  const selected = current.incidents.find(row => row.id === $('incident-picker').value);
-  if (!selected) return;
+  const ids = checkedIncidents();
+  if (!ids.length) return;
   action($('resolve-incident'), async () => {
-    await api('/api/resolve', {id: selected.id});
-    $('resolution-status').textContent = 'Résolution enregistrée pour ' + selected.summary;
+    await api('/api/resolve', {ids});
+    $('resolution-status').textContent = ids.length === 1 ? '1 incident validé comme résolu.' : ids.length + ' incidents validés comme résolus.';
   });
 });
 $('refresh').addEventListener('click',()=>refresh());

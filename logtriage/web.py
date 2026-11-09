@@ -256,7 +256,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 save_settings(self.app.directory, values)
                 return self.reply(200, {"ok": True})
             if path == "/api/resolve":
-                self.app.reports.resolve(values.get("id"))
+                self.app.reports.resolve(values.get("ids", [values.get("id")]))
                 return self.reply(200, {"ok": True})
             if path == "/api/chatgpt/connect":
                 helper = self.app.chatgpt.helper(self.app.public_url, self.app.certificate, values.get("profile"))

@@ -4,7 +4,7 @@ Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve 
 
 La version 0.2 reconnaît aussi les rapports Proxmox VE/PBS/Mail Gateway, les alertes Wazuh individuelles, les notifications Synology de stockage, instantanés, mises à jour et sécurité, ainsi que les états d’onduleur et les compteurs Kyocera rencontrés dans la boîte. Les messages administratifs et les bulletins sont identifiés séparément.
 
-Pour clôturer une tâche vérifiée, ouvre **Bilan → Valider la résolution d’un incident**, choisis la tâche puis clique sur **Marquer comme résolu**. La validation est conservée dans le volume de données et apparaît dans les résolutions des dernières 24 heures avec la mention « Validé manuellement ». Un nouvel échec ou avertissement de cette tâche la rouvre. Après validation, prépare un nouvel aperçu avant l’envoi. Les observations de sécurité et les formats inconnus sont des points à examiner distincts des incidents de tâches suivies.
+Dans **Bilan → Incidents ouverts**, coche les tâches vérifiées, puis clique sur **Marquer comme résolus** pour valider toute la sélection en une fois. Tu peux décocher une ligne avant la validation. La validation est conservée dans le volume de données et apparaît dans les résolutions des dernières 24 heures avec la mention « Validé manuellement ». Un nouvel échec ou avertissement de cette tâche la rouvre. Après validation, prépare un nouvel aperçu avant l’envoi. Les observations de sécurité et les formats inconnus sont des points à examiner distincts des incidents de tâches suivies.
 
 L’email et l’aperçu présentent les points récents, les anciens incidents encore ouverts et les résolutions récentes. L’envoi associe une version HTML à une version texte.
 

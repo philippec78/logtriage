@@ -17,15 +17,14 @@
     <section id="view-bilan" class="view" aria-labelledby="bilan-title">
       <div class="page-heading"><div><h1 id="bilan-title">Bilan des serveurs</h1><p id="collection-status">Chargement de la collecte…</p></div><button id="refresh" type="button">Actualiser</button></div>
       <dl class="summary"><div><dt>Emails analysés</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
-      <details id="incident-panel">
-        <summary>Valider la résolution d’un incident <span id="incident-count"></span></summary>
-        <p>Choisis la tâche que tu as vérifiée. Un nouveau signal d’échec ou d’avertissement la rouvrira.</p>
-        <label for="incident-picker">Incident ouvert</label>
-        <select id="incident-picker"></select>
-        <p id="incident-detail" class="muted"></p>
-        <button id="resolve-incident" type="button">Marquer comme résolu</button>
+      <section id="incident-panel" aria-labelledby="incident-heading">
+        <h2 id="incident-heading" tabindex="-1">Incidents ouverts <span id="incident-count"></span></h2>
+        <p id="incident-hint">Coche les incidents que tu as vérifiés, puis valide ta sélection.</p>
+        <ul id="incident-list" aria-labelledby="incident-heading"></ul>
+        <p id="incident-empty" hidden>Aucun incident ouvert.</p>
+        <button id="resolve-incident" type="button" disabled>Valider la sélection</button>
         <p id="resolution-status" role="status" aria-live="polite"></p>
-      </details>
+      </section>
       <div class="section-heading"><h2>Dernier bilan disponible</h2><a href="#rapport">Préparer un envoi</a></div>
       <div id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</div>
     </section>
