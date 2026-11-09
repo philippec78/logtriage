@@ -58,6 +58,7 @@ function renderIncidents(rows) {
   const fingerprint = JSON.stringify(rows);
   if (list.dataset.rows !== fingerprint) {
     const selected = new Set(checkedIncidents());
+    const expanded = new Set(Array.from(list.querySelectorAll('details[open]'), node => node.dataset.signal));
     const focused = list.contains(document.activeElement) ? document.activeElement.value : null;
     const fragment = document.createDocumentFragment();
     for (const row of rows) {
@@ -77,6 +78,22 @@ function renderIncidents(rows) {
       label.append(checkbox, when, text);
       item.dataset.kind = row.severity === "open" ? "bad" : "warn";
       item.append(label);
+      if (row.analysis?.state === 'ready') {
+        const note = element('details','incident-note');
+        note.dataset.signal = row.id;
+        note.open = expanded.has(row.id);
+        note.append(element('summary','','Analyse IA · '+row.analysis.constat),
+          element('p','','Élément relevé : « '+row.analysis.preuve+' »'),
+          element('p','','Vérification proposée : '+row.analysis.verification));
+        item.append(note);
+      } else if (row.analysis) {
+        const statuses = {pending:'Analyse IA en attente.', error:'Analyse IA différée. Nouvel essai automatique.',
+          configure:'Pour analyser cet incident, connecte ChatGPT et choisis un modèle dans les réglages.'};
+        const reasons = {usage_limit:'Limite ChatGPT atteinte. L’analyse reprendra après un délai.',
+          invalid_analysis:'La réponse IA ou sa citation n’a pas pu être validée. Un nouvel essai est prévu.',
+          login_required:'Reconnecte le compte ChatGPT dans les réglages.', model_unavailable:'Actualise les modèles et choisis un modèle disponible.'};
+        item.append(element('p','incident-note muted', reasons[row.analysis.reason] || statuses[row.analysis.state]));
+      }
       fragment.append(item);
     }
     list.replaceChildren(fragment);

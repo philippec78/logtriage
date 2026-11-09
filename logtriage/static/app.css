@@ -161,3 +161,7 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #incident-list .issue-client {display:inline;margin-left:.55em;font-weight:400;color:var(--muted)}
 .check-filters {flex-wrap:wrap}
 .check-table .client-domain {text-transform:none;letter-spacing:0}
+
+#incident-list .incident-note {margin:2px 0 7px 25px;font-size:.82rem;line-height:1.4;overflow-wrap:anywhere}
+.incident-note summary {color:var(--primary);cursor:pointer}
+.incident-note p {margin:.35rem 0}

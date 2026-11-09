@@ -28,6 +28,7 @@ from .store import Store, current_bilan
 from .calendar_suggestions import activate_suggestions
 from .monitoring import policy, change, schedule
 from .user_rules import activate, simulate
+from .incident_ai import IncidentAnalyst, annotations
 from .web_reports import WebReports, error_message
 
 LOG = logging.getLogger("logtriage.web")
@@ -159,6 +160,9 @@ class WebApplication:
         same_day = checks.get("day") == summary.get("report_day")
         rows = [r if same_day else {**r, "history": []} for r in checks.get("items", [])
                 if (same_day or r["state"] in ("open", "warning")) and (not r["missing"] or summary.get("monitoring_available"))]
+        account = self.chatgpt.state()
+        incidents = [row for row in read_json(self.directory / "exports/open-incidents.json", [])
+                     if not row.get("missing") or summary.get("monitoring_available")]
         return {"checks": rows, "monitoring": {"schedules": monitoring["schedules"],
                 "suggestions": [r for r in read_json(self.directory / "exports/calendar-suggestions.json", []) if r["id"] not in active],
                 "rules": [{k: v for k, v in r.items() if k != "examples"} for r in monitoring["rules"]],
@@ -167,10 +171,9 @@ class WebApplication:
                 "version": __version__, "settings": settings,
                 "status": read_json(self.directory / "status.json"),
                 "summary": summary,
-                "incidents": [row for row in read_json(self.directory / "exports/open-incidents.json", [])
-                              if not row.get("missing") or summary.get("monitoring_available")],
+                "incidents": annotations(self.directory, settings, account, incidents),
                 "latest_digest": bilan,
-                "chatgpt": self.chatgpt.state(), "models": self.chatgpt.cached_models(),
+                "chatgpt": account, "models": self.chatgpt.cached_models(),
                 "report": self.reports.state(), "mailbox": {"host": os.environ.get("IMAP_HOST", ""),
                     "user": os.environ.get("IMAP_USER", ""), "folder": os.environ.get("IMAP_FOLDER", "INBOX")}}
 
@@ -370,6 +373,8 @@ def start(directory):
         server.socket = context.wrap_socket(server.socket, server_side=True)
         app.certificate = cert.read_text(encoding="utf-8")
     threading.Thread(target=server.serve_forever, daemon=True, name="web-interface").start()
+    analyst = IncidentAnalyst(app.directory, app.chatgpt)
+    threading.Thread(target=analyst.run, args=(app.stopped,), daemon=True, name="incident-analyst").start()
     threading.Thread(target=app.maintenance, daemon=True, name="chatgpt-refresh").start()
     LOG.info("Interface protégée démarrée ; collecte IMAP toujours en lecture seule.")
     return server

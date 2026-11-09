@@ -11,7 +11,7 @@ def defaults():
             "recipient": os.environ.get("REPORT_TO", ""), "sender": os.environ.get("SMTP_FROM") or os.environ.get("IMAP_USER", ""),
             "smtp_host": os.environ.get("SMTP_HOST", ""), "smtp_port": int(os.environ.get("SMTP_PORT", "465")),
             "use_imap_credentials": os.environ.get("SMTP_USE_IMAP_CREDENTIALS", "false").lower() == "true",
-            "ai_model": "", "ai_instructions": "", "ai_enabled": False, "ai_review_unknown": False}
+            "ai_model": "", "ai_instructions": "", "ai_enabled": False, "ai_incidents": False, "ai_review_unknown": False}
 
 
 def load_settings(directory):
@@ -29,7 +29,7 @@ def save_settings(directory, update):
         for name, low, high in (("max_groups", 1, 100), ("poll_seconds", 30, 86400), ("smtp_port", 1, 65535)):
             if type(value[name]) is not int or not low <= value[name] <= high:
                 raise ValueError(f"Valeur hors limites : {name}.")
-        for name in ("ai_enabled", "ai_review_unknown", "use_imap_credentials"):
+        for name in ("ai_enabled", "ai_incidents", "ai_review_unknown", "use_imap_credentials"):
             if type(value[name]) is not bool:
                 raise ValueError("Choix invalide.")
         for name in ("recipient", "sender", "smtp_host", "ai_model", "ai_instructions"):
