@@ -128,6 +128,44 @@ class FormatsTests(unittest.TestCase):
                 self.assertTrue(msg["recognized"])
                 self.assertEqual(msg["category"], category)
 
+    def test_backup_agent_disconnect_and_reconnect_are_correlated(self):
+        down = parse("[NAS] Active Backup for Business – Le serveur physique PC-A s'est déconnecté", "De NAS", day=8)
+        up = parse("[NAS] Active Backup for Business – Le serveur physique PC-A s'est reconnecté", "De NAS", day=9)
+        other = parse("[NAS] Active Backup for Business – Le serveur physique PC-B s'est déconnecté", "De NAS", day=8)
+        self.assertEqual(down["category"], "avertissement")
+        tasks, _ = derive_state([down, up, other])
+        self.assertEqual(tasks['account|' + down['task_key']]['state'], 'resolved')
+        self.assertEqual(tasks['account|' + other['task_key']]['state'], 'warning')
+
+    def test_inline_scan_scores_and_explicit_simulations(self):
+        low = parse("[OpenVAS] Récapitulatif des CVE", "Tâche : app.example.com\nCVE-2000-0001 (score max. 2,1) – lien")
+        high = parse("[OpenVAS] Récapitulatif des CVE", "Tâche : app.example.com\nCVE-2000-0002 (score max. 9,1) – lien")
+        empty = parse("[OpenVAS] Scan terminé – app.example.com", "Aucune CVE ne répond aux critères de notification pour ce scan.")
+        simulated = parse("[TEST] [OpenVAS] Vulnérabilités critiques", "Ceci est un test de mise en forme. Les données sont fictives. CVE-2000-0000")
+        kev = parse("[OpenVAS] [CISA KEV] CVE activement exploitées", "CVE-2000-0003")
+        unknown = parse("[OpenVAS] Scan terminé – app.example.com", "Rapport disponible ailleurs")
+        self.assertEqual(low['category'], 'information_avec_observations')
+        self.assertEqual(high['category'], 'a_examiner')
+        self.assertEqual(empty['category'], 'information')
+        self.assertEqual(simulated['category'], 'information')
+        self.assertEqual(unknown['category'], 'a_verifier')
+        self.assertTrue(kev['observations'][0]['urgent'])
+        tasks, observations = derive_state([low, high, simulated, kev])
+        digest = render_digest({'total_messages': 4}, [low, high, simulated, kev], list(tasks.values()), list(observations.values()), current_time=datetime(2026, 11, 9, 11, tzinfo=timezone.utc))
+        self.assertIn('CVE-2000-0002', digest)
+        self.assertIn('CVE-2000-0003', digest)
+        self.assertNotIn('CVE-2000-0001', digest)
+        self.assertNotIn('CVE-2000-0000', digest)
+
+    def test_monthly_disk_report_status_and_alternate_proxmox_title(self):
+        healthy = parse("[NAS] Rapport mensuel sur l’état de santé des disques sur NAS – Healthy", "No problem detected with the drives in DSM.\nDe NAS")
+        degraded = parse("[NAS] Rapport mensuel sur l’état de santé des disques sur NAS – Healthy", "Disque défaillant\nDe NAS")
+        report = parse("[Proxmox] Nouveau rapport graphique – mise en service", "RAPPORT JOURNALIER PROXMOX — PBS / PVE\n2 tâche(s) PBS terminée(s) avec un statut différent de OK.")
+        self.assertEqual(healthy['category'], 'information')
+        self.assertEqual(degraded['category'], 'avertissement')
+        self.assertEqual(report['category'], 'avertissement')
+        self.assertIn('2 tâche(s)', report['summary'])
+
 
 class DigestTests(unittest.TestCase):
     def test_routine_success_and_resolved_failures_are_not_open_alerts(self):
