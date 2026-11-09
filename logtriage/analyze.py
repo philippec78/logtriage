@@ -198,12 +198,21 @@ def analyze(raw, rules):
         pdf = "\n".join(a.get("text", "") for a in pdfs)
         target = re.sub(r"^.*?Scan termin[eé]\s*[–—-]\s*", "", subject, flags=re.I)
         key = "openvas|" + target
+        inline = {}
+        for match in re.finditer(r"(CVE-\d{4}-\d{4,})(?:\s*\(score max\.\s*(\d{1,2}[.,]\d+)\))?", text, re.I):
+            cve, score = match[1].upper(), float(match[2].replace(",", ".")) if match[2] else None
+            previous = inline.get(cve)
+            inline[cve] = max(score, previous) if score is not None and previous is not None else score if score is not None else previous
         scores = [float(x.replace(",", ".")) for x in re.findall(r"CVSS\s+(\d{1,2}[.,]\d+)\s*/\s*10", pdf, re.I)]
+        scores += [s for s in inline.values() if s is not None]
         max_score = max(scores) if scores else None
         no_notifiable_cve = "aucune cve ne repond aux criteres" in normalized
-        if not pdfs:
+        if not pdfs and not inline and not no_notifiable_cve:
             warnings.append("openvas_rapport_pdf_absent_ou_non_analyse")
         observations = []
+        for cve, score in inline.items():
+            observations.append(observation(key + "|" + cve, f"{target} : {cve}" + (f" (score déclaré {score}/10)" if score is not None else " ; sévérité à confirmer"),
+                                            cve, source="inline", source_cvss=score, urgent="cisa kev" in ns))
         if "horodatages tcp" in norm(pdf):
             observations.append(observation(key + "|tcp-timestamps", "Horodatages TCP signalés", "Horodatages TCP", source="pdf", source_cvss=max_score))
         if "ne correspond pas aux noms" in norm(pdf) or "certificat different du nom" in norm(pdf):
@@ -214,7 +223,8 @@ def analyze(raw, rules):
             summary = "Scan terminé : aucune CVE au seuil de notification ; consulter les observations du PDF."
             category = "information_avec_observations" if observations else "information"
         else:
-            summary, category = "Scan OpenVAS : résultats à examiner.", "a_examiner"
+            summary = "Scan OpenVAS : résultats à examiner."
+            category = "information_avec_observations" if inline and all(s is not None and s < rules["openvas"]["notification_cvss"] for s in inline.values()) and "cisa kev" not in ns else "a_examiner"
         if max_score is not None and max_score >= rules["openvas"]["notification_cvss"]:
             category = "a_examiner"
         if warnings:
