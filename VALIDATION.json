@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 32,
-    "passed": 32,
+    "executed": 33,
+    "passed": 33,
     "real_imap_connection": false
   },
   "sample": {
@@ -24,6 +24,6 @@
   "outgoing_notifications": false,
   "missing_report_monitoring": false,
   "portainer_password_configuration": "environment password and explicit file priority tested",
-  "recognition": "Régressions sur les familles observées et sur les dix exemples privés ; audit intégral de la boîte à vérifier sur le serveur",
+  "recognition": "Régressions sur les familles observées, y compris les formats supplémentaires révélés par l’audit des 3048 messages ; dix exemples privés vérifiés",
   "report": "Bilan de 24 heures, répétitions regroupées, réussites masquées, anciens incidents séparés"
 }
