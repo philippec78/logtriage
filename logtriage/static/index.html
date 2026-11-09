@@ -15,29 +15,35 @@
   <main id="content" tabindex="-1">
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
     <section id="view-bilan" class="view" aria-labelledby="bilan-title">
-      <div class="page-heading"><div><h1 id="bilan-title">Tableau de bord</h1><p id="collection-status">Chargement de la collecte…</p></div><button id="refresh" type="button">Actualiser</button></div>
-      <div class="overview-grid">
-      <section class="panel overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
-        <div id="status-totals" class="status-totals"></div>
-        <p id="pending-total" class="hint"></p>
-      <dl class="summary"><div><dt>Emails du jour</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus du jour</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
-      </section>
-      <section class="panel" id="incident-panel" aria-labelledby="incident-heading">
-        <h2 id="incident-heading" tabindex="-1">Incidents ouverts <span id="incident-count"></span></h2>
-        <p id="incident-hint">Coche les incidents que tu as vérifiés, puis valide ta sélection.</p>
-        <ul id="incident-list" aria-labelledby="incident-heading"></ul>
-        <p id="incident-empty" hidden>Aucun incident ouvert.</p>
-        <button id="resolve-incident" type="button" disabled>Valider la sélection</button>
-        <p id="resolution-status" role="status" aria-live="polite"></p>
-      </section>
+      <div class="dashboard-heading"><h1 id="bilan-title">Tableau de bord</h1>
+        <div><span id="collection-status">Chargement de la collecte…</span><button id="refresh" type="button">↻ Actualiser</button></div>
       </div>
-      <section class="panel" aria-labelledby="checks-title">
-        <div class="checks-head"><div><h2 id="checks-title">Contrôles par serveur</h2><p class="hint">Activité du jour et incidents encore ouverts</p></div>
-          <div class="check-filters"><label>État<select id="check-status"><option value="">Tous les états</option>
+      <div class="overview-grid">
+        <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
+          <div class="dash-surface overview-body"><div id="status-totals" class="status-totals"></div>
+            <p id="pending-total" class="hint"></p>
+            <dl class="summary"><div><dt>Emails du jour</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
+          </div>
+        </section>
+        <section id="incident-panel" aria-labelledby="incident-heading">
+          <h2 id="incident-heading" tabindex="-1">Incidents ouverts <span id="incident-count"></span></h2>
+          <div class="dash-surface issues-body">
+            <div id="issues-head" aria-hidden="true"><span>Dernier signal</span><span>Incident</span></div>
+            <ul id="incident-list" aria-labelledby="incident-heading"></ul>
+            <p id="incident-empty" hidden>Aucun incident ouvert.</p>
+            <div class="issue-actions"><span id="incident-hint">Coche les incidents résolus.</span><button id="resolve-incident" type="button" disabled>Valider la sélection</button></div>
+            <p id="resolution-status" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+      </div>
+      <section class="checks-panel" aria-labelledby="checks-title">
+        <div class="checks-head"><h2 id="checks-title">Mes contrôles</h2>
+          <div class="check-filters"><label><span class="sr-only">État</span><select id="check-status"><option value="">Tous les états</option>
           <option value="good">Sans incident</option><option value="warn">Avertissement</option>
           <option value="bad">Échec</option><option value="other">À confirmer</option></select></label>
-          <label>Rechercher<input id="check-search" type="search" placeholder="Serveur ou tâche"></label></div></div>
-        <div id="check-groups"></div>
+          <label><span class="sr-only">Rechercher un serveur ou une tâche</span><input id="check-search" type="search" placeholder="Serveur ou tâche"></label>
+          <a href="#reglages">Gérer les contrôles</a></div></div>
+        <div id="check-groups" class="dash-surface"></div>
       </section>
       <div class="section-heading"><h2>Dernier bilan disponible</h2><a href="#rapport">Préparer un envoi</a></div>
       <div id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</div>
@@ -127,5 +133,9 @@
     </section>
   </main><footer><span id="version"></span><span>Envoi à la demande · Accès IMAP en lecture seule</span></footer>
 </div>
+<dialog id="check-detail" aria-labelledby="detail-title">
+  <h2 id="detail-title"></h2><p id="detail-context"></p><h3>Signaux du jour</h3>
+  <div id="detail-history"></div><form method="dialog"><button autofocus>Fermer</button></form>
+</dialog>
 <dialog id="plan-welcome"><h2>Tu utilises ton abonnement ChatGPT</h2><p>Les analyses demandées dans logtriage utilisent ton abonnement et ses limites. Tu peux gérer l’accès et l’utilisation depuis les réglages ChatGPT.</p><form method="dialog"><button class="primary">Compris</button></form></dialog>
 </body></html>

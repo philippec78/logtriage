@@ -69,10 +69,11 @@ function renderIncidents(rows) {
       checkbox.checked = selected.has(row.id);
       const text = document.createElement('span');
       text.textContent = row.summary;
-      const detail = document.createElement('small');
-      detail.textContent = (row.severity === 'open' ? 'Échec' : 'Avertissement') + ' · Dernier signal le ' + date(row.date);
-      text.append(detail);
-      label.append(checkbox, text);
+      const when = element('time','issue-date',date(row.date));
+      when.dateTime = row.date;
+      text.className = 'issue-name';
+      text.prepend(element('span','sr-only',row.severity === 'open' ? 'Échec — ' : 'Avertissement — '));
+      label.append(checkbox, when, text);
       item.dataset.kind = row.severity === "open" ? "bad" : "warn";
       item.append(label);
       fragment.append(item);
@@ -81,6 +82,7 @@ function renderIncidents(rows) {
     if (focused) Array.from(list.querySelectorAll('input')).find(input => input.value === focused)?.focus({preventScroll:true});
     list.dataset.rows = fingerprint;
   }
+  $('issues-head').hidden = rows.length === 0;
   $('incident-count').textContent = '(' + rows.length + ')';
   $('incident-empty').hidden = rows.length !== 0;
   $('incident-hint').hidden = $('resolve-incident').hidden = list.hidden = rows.length === 0;
@@ -193,6 +195,17 @@ function element(tag, name, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+const familyLabels = new Map([
+  ['Sauvegardes',['synology-backup','synology-abb','synology-restore','synology-integrity','pbs','pve']],
+  ['Stockage',['synology-disks','synology-capacity']],
+  ['Réplication',['synology-replication','synology-snapshot']],
+  ['Disponibilité',['uptime','synology-abb-connectivity','pve-ha','synology-ha']],
+  ['Sécurité',['account-security','synology-firewall','openvas','wazuh','pmg']],
+  ['Alimentation',['ups','ups-monitoring','ups-snmp']],
+  ['Maintenance',['synology-log','synology-cms','synology-dsm-update']],
+  ['Tâches planifiées',['synology-scheduler']], ['Impression',['printer']],
+  ['Intégration continue',['github-actions']], ['Contrôles personnalisés',['custom']]
+].flatMap(([label, keys]) => keys.map(key => [key,label])));
 function renderChecks(rows) {
   const counts = {good:0, warn:0, bad:0, other:0};
   rows.forEach(row => counts[checkKind(row)]++);
@@ -218,49 +231,67 @@ function renderChecks(rows) {
     (r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
   const signature = JSON.stringify([query,filter,matching]);
   if (list.dataset.rows === signature) return;
-  const opened = new Set(Array.from(list.querySelectorAll('details[open]'), d => d.dataset.host));
-  const first = !list.dataset.rows;
   list.dataset.rows = signature;
   const groups = new Map();
   for (const row of matching) {
-    if (!groups.has(row.host)) groups.set(row.host, []);
-    groups.get(row.host).push(row);
+    const family = row.missing ? 'Rapports attendus' : familyLabels.get(row.family) || row.family || 'Autres contrôles';
+    if (!groups.has(family)) groups.set(family, []);
+    groups.get(family).push(row);
   }
-  const fragment = document.createDocumentFragment();
-  for (const [host, checks] of groups) {
-    const group = element('details','check-group');
-    group.dataset.host = host;
-    group.open = Boolean(query) || Boolean(filter) || opened.has(host) || (first && !fragment.childNodes.length);
-    const headline = element('summary','');
-    headline.append(element('strong','',host),element('small','',checks.length+' contrôle'+(checks.length>1?'s':'')));
-    const table = element('table','check-table');
-    table.setAttribute('aria-label', 'Contrôles de '+host);
-    const head = table.createTHead().insertRow();
-    for (const title of ['Contrôle','Dernier signal','Historique du jour']) {
-      const th = element('th','',title); th.scope='col'; head.append(th);
-    }
+  if (!groups.size) {
+    list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle à afficher pour le moment.'));
+    return;
+  }
+  const table = element('table','check-table');
+  table.setAttribute('aria-labelledby','checks-title');
+  const headings = table.createTHead().insertRow();
+  for (const title of ['Contrôle','Dernier signal','Historique du jour','Détails']) {
+    const th = element('th','',title);
+    th.scope = 'col';
+    headings.append(th);
+  }
+  for (const family of [...groups.keys()].sort((a,b)=>a.localeCompare(b,'fr'))) {
     const body = table.createTBody();
-    for (const row of checks) {
+    body.className = 'check-group';
+    const heading = element('th','family-title',family);
+    heading.scope = 'rowgroup';
+    heading.colSpan = 4;
+    body.insertRow().append(heading);
+    for (const row of groups.get(family)) {
       const tr = body.insertRow(), name = tr.insertCell(), kind = checkKind(row);
       const label = row.missing && row.state === 'warning' ? 'En retard' :
         ({good:'Sans incident',warn:'Avertissement',bad:'Échec',other:'À confirmer'})[kind];
-      name.append(element('span','state-label '+kind,label),document.createTextNode(row.name));
+      const marker = element('span','signal '+kind);
+      marker.title = label;
+      marker.setAttribute('aria-label',label);
+      marker.setAttribute('role','img');
+      name.append(marker,element('span','check-name',row.name),element('small','check-host',row.host));
       tr.insertCell().textContent = date(row.date);
-      const history = tr.insertCell();
+      const history = tr.insertCell(), strip = element('span','signal-strip');
       for (const [stamp,event] of row.history) {
         const dot = element('span','signal '+(({success:'good',failure:'bad',warning:'warn'})[event] || 'other'));
         dot.title = date(stamp)+' · '+(executionLabels[event] || 'À confirmer');
         dot.setAttribute('role','img');
         dot.setAttribute('aria-label',dot.title);
-        history.append(dot);
+        strip.append(dot);
       }
-      if (!row.history.length) history.textContent = '—';
+      history.append(row.history.length ? strip : '—');
+      const inspect = button('', () => {
+        $('detail-title').textContent = row.name;
+        $('detail-context').textContent = row.host+' · '+label+' · '+date(row.date);
+        const entries = row.history.map(([stamp,event]) => element('li','',date(stamp)+' · '+(executionLabels[event] || 'À confirmer')));
+        const content = entries.length ? element('ol','') : element('p','','Aucun signal reçu aujourd’hui.');
+        content.append(...entries);
+        $('detail-history').replaceChildren(content);
+        $('check-detail').showModal();
+      });
+      inspect.className = 'inspect';
+      inspect.title = 'Voir les détails de '+row.name+' sur '+row.host;
+      inspect.setAttribute('aria-label',inspect.title);
+      tr.insertCell().append(inspect);
     }
-    group.append(headline,table);
-    fragment.append(group);
   }
-  if (!matching.length) fragment.append(element('p','muted', rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle à afficher pour le moment.'));
-  list.replaceChildren(fragment);
+  list.replaceChildren(table);
 }
 $('check-search').addEventListener('input', () => renderChecks(current?.checks || []));
 $('check-status').addEventListener('change', () => renderChecks(current?.checks || []));

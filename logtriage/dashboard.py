@@ -23,7 +23,7 @@ def checks(tasks, messages, moment, tz):
         parts = t["key"].removeprefix("missing|").split("|")
         host = parts[1] if len(parts) > 1 else "Source non identifiée"
         name = " · ".join([parts[0], *parts[2:]])
-        rows.append({"host": host, "name": ("Rapport attendu · " if missing else "") + name,
+        rows.append({"family": parts[0], "host": host, "name": ("Rapport attendu · " if missing else "") + name,
                      "state": state, "missing": missing, "date": stamp,
                      "history": list(history[t["scope"], t["key"]])})
     return sorted(rows, key=lambda r: (r["host"].casefold(), r["name"].casefold()))
