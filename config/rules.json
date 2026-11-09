@@ -1,5 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
+  "report": {
+    "window_hours": 24,
+    "max_groups": 20,
+    "disk_warning_percent": 90,
+    "memory_warning_percent": 95
+  },
   "synology": {
     "failure_patterns": ["a échoué", "a rencontré une erreur", "échec de la sauvegarde", "backup failed", "replication failed"],
     "success_patterns": ["a été effectuée avec succès", "a été effectué avec succès"],
