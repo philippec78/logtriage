@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .digest import derive_state, render_digest
+
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -66,7 +68,7 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO refs VALUES (?,?,?)", (reference, scope, result["sha256"]))
         return inserted
 
-    def export(self, tz="Europe/Zurich"):
+    def export(self, tz="Europe/Zurich", report_config=None):
         rows = self.db.execute("SELECT scope,sha,result,imported_at FROM messages").fetchall()
         messages = []
         for scope, sha, payload, imported in rows:
@@ -78,62 +80,22 @@ class Store:
         messages.sort(key=lambda r: (r["date"], r["sha256"]))
         # Recalcul chronologique : un email ancien importé tardivement ne rouvre pas
         # un incident dont une réussite plus récente est déjà connue.
-        tasks, observations = {}, {}
-        for m in messages:
-            if m["task_key"]:
-                identity = m["scope"] + "|" + m["task_key"]
-                task = tasks.setdefault(identity, {"key": m["task_key"], "scope": m["scope"],
-                                                    "state": "unknown", "failures": [],
-                                                    "last_failure": None, "last_success": None})
-                task["last_message_date"] = m["date"]
-                if m["execution"] == "failure":
-                    task["state"] = "open"
-                    task["last_failure"] = m["date"]
-                    task["failures"].append({"date": m["date"], "message_sha256": m["sha256"],
-                                              "evidence": m["evidence"],
-                                              "signature": m.get("error_signature")})
-                elif m["execution"] == "success":
-                    # En cas d’horodatage identique : conserver l’échec comme ouvert.
-                    if not task["last_failure"] or m["date"] > task["last_failure"]:
-                        task["state"] = "resolved" if task["last_failure"] else "ok"
-                    task["last_success"] = m["date"]
-                task["latest_category"] = m["category"]
-            for item in m["observations"]:
-                identity = m["scope"] + "|" + item["key"]
-                old = observations.get(identity)
-                observations[identity] = {**item, "scope": m["scope"],
-                                           "first_seen": old["first_seen"] if old else m["date"],
-                                           "last_seen": m["date"], "message_sha256": m["sha256"],
-                                           "reports_seen": (old["reports_seen"] if old else 0) + 1}
+        tasks, observations = derive_state(messages)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))
         summary = {"generated_at": now(), "mode": "read_only", "total_messages": len(messages),
                    "categories": counts, "open_tasks": sum(t["state"] == "open" for t in tasks.values()),
                    "observation_groups": len(observations), "expected_reports_enabled": False,
+                   "recognized_messages": sum(bool(m.get("recognized")) for m in messages),
+                   "unrecognized_messages": sum(not m.get("recognized") for m in messages),
+                   "formats": dict(collections.Counter(m.get("format", "unknown") for m in messages)),
                    "outgoing_notifications_enabled": False}
         atomic_json(export / "messages.json", messages)
         atomic_json(export / "tasks.json", list(tasks.values()))
         atomic_json(export / "observations.json", list(observations.values()))
         atomic_json(export / "summary.json", summary)
         local_day = datetime.now(ZoneInfo(tz)).date().isoformat()
-        # Le bilan courant inclut les incidents ouverts, même anciens.
-        lines = [f"Bilan local du {local_day} ({tz})", "Mode : lecture seule, aucun envoi",
-                 f"Emails analysés : {len(messages)}", f"Tâches en échec ouvert : {summary['open_tasks']}",
-                 "", "TÂCHES EN ÉCHEC"]
-        for task in tasks.values():
-            if task["state"] == "open":
-                lines.append(f"- {task['key']} : {len(task['failures'])} échec(s) dans l’historique ; dernier {task['last_failure']}")
-                for failure in task["failures"][-3:]:
-                    lines.append("  " + failure["date"] + " : " + "; ".join(failure["evidence"]))
-        lines += ["", "OBSERVATIONS À VÉRIFIER (historiques ; résolution non confirmée)"]
-        lines += [f"- {o['key']} : {o['summary']} (dernier rapport {o['last_seen']})"
-                  for o in observations.values()]
-        lines += ["", "EMAILS À VÉRIFIER / AVERTISSEMENTS DE COUVERTURE"]
-        lines += [f"- {m['subject']} : {m['summary']} ; " + ", ".join(m["coverage_warnings"])
-                  for m in messages if m["category"] == "a_verifier" or m["coverage_warnings"]]
-        lines += ["", "Les absences de rapport ne sont pas surveillées tant que les calendriers ne sont pas définis.",
-                  "Les compteurs Wazuh sont des détections, pas des incidents uniques."]
-        text = "\n".join(lines) + "\n"
+        text = render_digest(summary, messages, list(tasks.values()), list(observations.values()), tz, report_config)
         export.mkdir(parents=True, exist_ok=True)
         temporary = export / "bilan.txt.tmp"
         temporary.write_text(text, encoding="utf-8")
