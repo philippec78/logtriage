@@ -83,7 +83,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
             continue
         level = o.get("source_level")
         cvss = o.get("source_cvss")
-        if level is None and not o.get("urgent") and o.get("source") == "pdf" and (cvss is None or cvss < 4):
+        if level is None and not o.get("urgent") and ((o.get("source") == "pdf" and cvss is None) or (o.get("source") in ("pdf", "inline") and cvss is not None and cvss < 4)):
             continue  # Constat faible/informatif conservé dans les JSON.
         groups[(o["scope"], o["key"])] = {
             "summary": (o.get("host", "") + " : " if o.get("host") else "") + o["summary"],
@@ -105,7 +105,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                                             "occurrences": 1, "resources": set()}
     for model, count in unknown.items():
         m = example[model]
-        groups[(m["scope"], "unknown:" + model)] = {"summary": "À vérifier : " + m["subject"],
+        groups[(m["scope"], "unknown:" + model)] = {"summary": m["summary"] if m.get("recognized") else m["subject"],
                                                     "date": m["date"], "severity": 2,
                                                     "occurrences": count, "resources": set()}
     ordered = sorted(groups.values(), key=lambda g: (g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
