@@ -3,6 +3,7 @@ import copy
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -10,6 +11,38 @@ from logtriage.__main__ import Config, load_rules
 from logtriage.analyze import analyze
 from logtriage.collector import poll
 from logtriage.store import Store
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_portainer_environment_password(self):
+        with patch.dict(os.environ, {"IMAP_HOST": "imap.test", "IMAP_USER": "logs@test",
+                                     "IMAP_PASSWORD": "test-$-literal with spaces "}, clear=True):
+            config = Config.load()
+        self.assertEqual(config.password, "test-$-literal with spaces ")
+        self.assertEqual(config.port, 993)
+
+    def test_explicit_secret_file_has_priority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "password"
+            path.write_text("file-password\n")
+            with patch.dict(os.environ, {"IMAP_HOST": "imap.test", "IMAP_USER": "logs@test",
+                                         "IMAP_PASSWORD": "environment-password",
+                                         "IMAP_PASSWORD_FILE": str(path)}, clear=True):
+                self.assertEqual(Config.load().password, "file-password")
+
+    def test_missing_explicit_file_does_not_fall_back_to_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"IMAP_HOST": "imap.test", "IMAP_USER": "logs@test",
+                                         "IMAP_PASSWORD": "environment-password",
+                                         "IMAP_PASSWORD_FILE": str(Path(tmp) / "missing")}, clear=True):
+                with self.assertRaises(FileNotFoundError):
+                    Config.load()
+
+    def test_empty_password_is_rejected(self):
+        with patch.dict(os.environ, {"IMAP_HOST": "imap.test", "IMAP_USER": "logs@test",
+                                     "IMAP_PASSWORD": ""}, clear=True):
+            with self.assertRaises(ValueError):
+                Config.load()
 
 
 def mail(subject, body, date="Mon, 09 Nov 2026 05:00:00 +0100", html=None, message_id="<test@example.com>"):
