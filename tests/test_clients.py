@@ -69,7 +69,31 @@ class ClientTests(unittest.TestCase):
                    ("2026-10-25T01:30:00+00:00", "success")]
         days = history_dates(moment.date())
         states = daily_history(signals, [], days, ZoneInfo(ZONE), moment.isoformat())
-        self.assertEqual(states[-3:], [["2026-10-24", "failure"], ["2026-10-25", "success"], ["2026-10-26", "none"]])
+        self.assertEqual([[day, state] for day, state, *_ in states[-3:]], [["2026-10-24", "failure"], ["2026-10-25", "success"], ["2026-10-26", "none"]])
+
+    def test_day_evidence_tracks_the_mail_responsible_for_the_colour(self):
+        signals = [event("one.ch", 5, "failure"), event("one.ch", 4, "warning"),
+                   event("one.ch", 3, "completed"), event("one.ch", 1, "success"),
+                   event("one.ch", 0, "completed")]
+        for m in signals:
+            m["subject"] = m["sha256"]
+        tasks, _ = derive_state(signals)
+        row, = checks(tasks.values(), signals, NOW, ZONE)
+        days = list(row["day_reasons"].values())
+        self.assertEqual([e["reason"] for e in days], ["none", "failure", "carried", "carried", "carried", "recovered", "unknown"])
+        self.assertIsNone(days[0]["detail_id"])
+        for n in (1, 2, 3, 4):
+            details, source = row["day_details"][days[n]["detail_id"]]
+            self.assertEqual(details["subject"], signals[0]["subject"])
+            self.assertEqual(source["sha256"], signals[0]["sha256"])
+        self.assertEqual(row["day_details"][days[5]["detail_id"]][0]["subject"], signals[3]["subject"])
+        token = next(iter(derive_state(signals[:2])[0].values()))["signal_id"]
+        closures = {}
+        tasks, _ = derive_state(signals[:2], {token: NOW.isoformat()}, manual_closures=closures)
+        row, = checks(tasks.values(), signals[:2], NOW, ZONE, closures)
+        last = list(row["day_reasons"].values())[-1]
+        self.assertEqual((last["reason"], last["at"]), ("manual", NOW.isoformat()))
+        self.assertEqual(row["day_details"][last["detail_id"]][0]["subject"], signals[0]["subject"])
 
     def test_same_control_keeps_distinct_calendars_and_arrival_times(self):
         from logtriage.calendar_suggestions import suggestions

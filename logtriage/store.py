@@ -176,10 +176,16 @@ class Store:
         atomic_json(export / "calendar-suggestions.json", suggestions(messages, options, status.get("scope"), moment, tz))
         check_rows = checks(tasks.values(), state_events, moment, tz, closures)
         details = {row["detail_id"]: row.pop("detail") for row in check_rows}
+        day_sources = {}
         for row in check_rows:
+            for key, (facts, locator) in row.pop("day_details").items():
+                details[key] = facts
+                if locator:
+                    day_sources[key] = locator
             detail_id, detail = row.pop("incident_detail_id"), row.pop("incident_detail")
             if detail_id:
                 details[detail_id] = detail
+        atomic_json(export / "day-sources.json", day_sources)
         atomic_json(export / "check-details.json", details)
         atomic_json(export / "checks.json", {"day": summary["report_day"], "items": check_rows})
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}

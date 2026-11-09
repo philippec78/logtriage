@@ -40,7 +40,7 @@ def scrub(text):
     return redact(text)
 
 
-def extract_sample(raw, message):
+def extract_sample(raw, message, max_text=MAX_TEXT):
     mail = BytesParser(policy=policy.default).parsebytes(raw)
     texts = []
     complete = not message.get("coverage_warnings") and not mail.defects
@@ -67,14 +67,14 @@ def extract_sample(raw, message):
     visit(mail)
     body = "\n".join(texts)
     subject = clean(scrub(message["subject"])).replace("\n", " ")
-    return {"id": message["sha256"], "subject": subject[:240], "text": body[:MAX_TEXT],
-            "complete": bool(body and complete and len(body) <= MAX_TEXT and len(subject) <= 240)}
+    return {"id": message["sha256"], "subject": subject[:240], "text": body[:max_text],
+            "complete": bool(body and complete and (max_text is None or len(body) <= max_text) and len(subject) <= 240)}
 
 
-def read_samples(messages, config, factory=imaplib.IMAP4_SSL):
+def read_samples(messages, config, factory=imaplib.IMAP4_SSL, *, display_body=False):
     scope = mailbox_scope(config)
     samples = []
-    limit = min(config.max_bytes, 2 * 1024 * 1024)
+    limit = config.max_bytes if display_body else min(config.max_bytes, 2 * 1024 * 1024)
     with factory(config.host, config.port, ssl_context=ssl.create_default_context(), timeout=config.timeout) as client:
         client.login(config.user, config.password)
         status, _ = client.select(quoted_mailbox(config.folder), readonly=True)
@@ -100,7 +100,7 @@ def read_samples(messages, config, factory=imaplib.IMAP4_SSL):
                 if not raw or len(raw) > limit or hashlib.sha256(raw).hexdigest() != message["sha256"]:
                     continue
                 try:
-                    samples.append(extract_sample(raw, message))
+                    samples.append(extract_sample(raw, message, None if display_body else MAX_TEXT))
                 except (LookupError, ValueError, TypeError, RecursionError):
                     pass
                 break

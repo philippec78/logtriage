@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import http.server
 import io
+import imaplib
 import ipaddress
 import json
 import logging
@@ -170,6 +171,10 @@ class WebApplication:
                 active = "failure" if row["state"] == "open" else "warning"
                 row["daily_history"] = [[day, previous.get(day, active if day > (checks.get("day") or day) else "none")]
                                         for day in days]
+                reasons = row.get("day_reasons", {})
+                last = reasons.get(checks.get("day"), {})
+                row["day_reasons"] = {day: reasons.get(day, {**last, "reason": "carried"})
+                                      for day in days if day in reasons or day > (checks.get("day") or day)}
         account = self.chatgpt.state()
         incidents = [row for row in read_json(self.directory / "exports/open-incidents.json", [])
                      if not row.get("missing") or summary.get("monitoring_available")]
@@ -253,6 +258,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             session = self.app.session(self.headers.get("Cookie"))
             if not session:
                 return self.reply(401, {"error": "Connecte-toi à l’interface."})
+            if path.startswith("/api/day-body/"):
+                from .unknown_review import Config, read_samples
+                key = path.removeprefix("/api/day-body/")
+                source = read_json(self.app.directory / "exports/day-sources.json", {}).get(key)
+                if not source:
+                    return self.reply(404, {"error": "Le texte de ce mail est indisponible."})
+                try:
+                    config = Config.load()
+                    samples = read_samples([source], config, display_body=True)
+                except (OSError, ValueError, EOFError, imaplib.IMAP4.error):
+                    samples = []
+                if not samples:
+                    return self.reply(404, {"error": "Le mail original ne peut plus être lu dans la boîte IMAP."})
+                return self.reply(200, {"text": samples[0]["text"]})
             if path.startswith("/api/check-detail/"):
                 key = path.removeprefix("/api/check-detail/")
                 detail = read_json(self.app.directory / "exports/check-details.json", {}).get(key)

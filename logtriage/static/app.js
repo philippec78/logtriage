@@ -246,6 +246,75 @@ const dailyStates = {
   success:['good','Sans incident'], failure:['bad','Échec ouvert'], warning:['warn','Avertissement ouvert'],
   unknown:['other','Résultat à confirmer'], none:['no-signal','Aucun signal']
 };
+const dayReasons = {
+  success: 'Le mail confirme que le contrôle a réussi.',
+  recovered: 'Un mail de réussite a clôturé l’incident.',
+  failure: 'Le mail signale un échec. Aucun rétablissement ultérieur n’a été constaté pour cette journée.',
+  warning: 'Le mail signale un avertissement encore ouvert.',
+  unknown: 'Le mail reçu ne permet pas de confirmer la réussite du contrôle.',
+  none: 'Aucun signal reçu et aucun incident ouvert pour cette journée.'
+};
+let dayRequest = 0;
+$('day-detail').addEventListener('close', () => { dayRequest++; });
+async function openDay(row, day, state) {
+  const request = ++dayRequest;
+  const entry = row.day_reasons?.[day];
+  const reason = entry?.reason;
+  const [kind, label] = dailyStates[state] || dailyStates.unknown;
+  const stamp = entry?.at ? date(entry.at) : '';
+  const explanations = {
+    carried: 'L’incident du '+stamp+' était toujours ouvert pour cette journée.',
+    manual: 'L’incident a été marqué comme résolu le '+stamp+'.',
+    warning: row.missing ? 'Le rapport attendu n’était pas arrivé à l’échéance.' : dayReasons.warning,
+    success: row.missing ? 'Le rapport attendu a été reçu.' : dayReasons.success,
+    recovered: row.missing ? 'La réception du rapport a mis fin au retard.' : dayReasons.recovered
+  };
+  $('day-title').replaceChildren(element('span','signal '+kind), ' '+day.split('-').reverse().join('.')+' · '+label);
+  $('day-context').textContent = [clientLabel(row.client), row.host, row.name].join(' · ');
+  $('day-reason').textContent = explanations[reason] || dayReasons[reason] || 'Le détail sera disponible après la prochaine collecte.';
+  $('day-source').hidden = !entry?.detail_id;
+  $('day-source-title').textContent = 'Mail à l’origine de cet état';
+  const mail = $('day-mail'), body = $('day-body');
+  mail.textContent = 'Chargement du mail…';
+  body.replaceChildren();
+  $('day-detail').showModal();
+  if (!entry?.detail_id) return;
+  const id = encodeURIComponent(entry.detail_id);
+  try {
+    const detail = await api('/api/check-detail/'+id);
+    if (request !== dayRequest) return;
+    if (detail.kind === 'schedule') {
+      $('day-source-title').textContent = 'Échéance du rapport';
+      mail.textContent = detail.summary+' · '+date(detail.date);
+      return;
+    }
+    mail.replaceChildren(element('strong','',detail.subject || 'Sans objet'),
+      element('p','muted',[detail.sender,date(detail.date)].filter(Boolean).join(' · ')),
+      element('p','',detail.summary));
+    if (detail.points.length) {
+      const list = element('ul','mail-points');
+      list.append(...detail.points.map(point => element('li','',point)));
+      mail.append(list);
+    }
+    body.textContent = 'Lecture du texte dans la boîte mail…';
+    const result = await api('/api/day-body/'+id);
+    if (request === dayRequest) body.textContent = result.text || 'Ce mail ne contient pas de texte lisible.';
+  } catch (error) {
+    if (request === dayRequest) (body.textContent ? body : mail).textContent = error.message;
+  }
+}
+function dayButton(row, day, state, withLabel = false) {
+  const [kind, label] = dailyStates[state] || dailyStates.unknown;
+  const title = day.split('-').reverse().join('.')+' · '+label;
+  const control = button('', () => openDay(row, day, state));
+  control.className = 'day-button';
+  control.title = title;
+  control.setAttribute('aria-label',title+' · '+row.name+' · Voir le mail et la raison');
+  control.setAttribute('aria-haspopup','dialog');
+  control.append(element('span','signal '+kind));
+  if (withLabel) control.append(title);
+  return control;
+}
 function checkKind(row) {
   if (row.state === 'open') return 'bad';
   if (row.state === 'warning') return 'warn';
@@ -616,20 +685,12 @@ function renderChecks(rows) {
       tr.insertCell().textContent = date(row.date);
       const history = tr.insertCell(), strip = element('span','signal-strip');
       const days = row.daily_history || [];
-      for (const [day, state] of days) {
-        const [kind, label] = dailyStates[state] || dailyStates.unknown;
-        const dot = element('span','signal '+kind);
-        dot.title = day.split('-').reverse().join('.')+' · '+label;
-        dot.setAttribute('role','img');
-        dot.setAttribute('aria-label',dot.title);
-        strip.append(dot);
-      }
+      strip.append(...days.map(([day, state]) => dayButton(row, day, state)));
       history.append(days.length ? strip : 'En attente de collecte');
       const inspect = inspectButton('Voir les détails de '+row.name+' sur '+row.host, () => {
         $('detail-days').replaceChildren(...days.map(([day, state]) => {
-          const [kind, label] = dailyStates[state] || dailyStates.unknown;
-          const item = element('li','','');
-          item.append(element('span','signal '+kind),day.split('-').reverse().join('.')+' · '+label);
+          const item = element('li','');
+          item.append(dayButton(row, day, state, true));
           return item;
         }));
         $('detail-signals').hidden = false;

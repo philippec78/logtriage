@@ -94,6 +94,25 @@ class WebTests(unittest.TestCase):
         self.assertIn("planificateur", mail["subject"])
         self.assertEqual(self.request("/api/check-detail/absent")[0], 404)
 
+    def test_day_mail_body_requires_login_and_uses_exported_reference(self):
+        self.fixture()
+        row, = read_json(self.directory / "exports/checks.json")["items"]
+        day = row["daily_history"][-1][0]
+        key = row["day_reasons"][day]["detail_id"]
+        path = "/api/day-body/" + key
+        self.assertEqual(self.request(path)[0], 401)
+        self.login()
+        self.assertEqual(self.request("/api/day-body/absent")[0], 404)
+        with patch("logtriage.unknown_review.Config.load"), patch("logtriage.unknown_review.read_samples") as reader:
+            reader.return_value = [{"text": "Texte du message"}]
+            self.assertEqual(self.request(path)[1], {"text": "Texte du message"})
+            source, = reader.call_args.args[0]
+            self.assertEqual(source["references"], ["test-ref"])
+            self.assertTrue(reader.call_args.kwargs["display_body"])
+            reader.return_value = []
+            self.assertEqual(self.request(path)[0], 404)
+        self.assertEqual(self.request("/api/check-detail/" + key)[0], 200)
+
     def test_bulk_assignment_is_atomic_and_limited_to_selected_tasks_on_one_nas(self):
         self.login()
         self.request("/api/clients/create", {"name":"Client A"})

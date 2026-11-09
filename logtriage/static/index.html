@@ -190,5 +190,13 @@
   <section id="detail-signals"><h3>7 derniers jours</h3><ul id="detail-days"></ul><h3>Signaux du jour</h3><div id="detail-history"></div></section>
  <form method="dialog"><button autofocus>Fermer</button></form>
 </dialog>
+<dialog id="day-detail" aria-labelledby="day-title">
+  <h2 id="day-title"></h2><p id="day-context" class="muted"></p>
+  <h3>Raison de la pastille</h3><p id="day-reason"></p>
+  <section id="day-source" hidden><h3 id="day-source-title">Mail à l’origine de cet état</h3>
+    <div id="day-mail" role="status"></div><div id="day-body" role="status"></div>
+  </section>
+  <form method="dialog"><button autofocus>Fermer</button></form>
+</dialog>
 <dialog id="plan-welcome"><h2>Tu utilises ton abonnement ChatGPT</h2><p>Les analyses demandées dans logtriage utilisent ton abonnement et ses limites. Tu peux gérer l’accès et l’utilisation depuis les réglages ChatGPT.</p><form method="dialog"><button class="primary">Compris</button></form></dialog>
 </body></html>
