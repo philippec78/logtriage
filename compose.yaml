@@ -39,6 +39,6 @@ services:
 volumes:
   triage-data:
 
-secrets:
-  imap_password:
-    file: ./secrets/imap_password.txt
+#secrets:
+#  imap_password:
+#    file: ./secrets/imap_password.txt
