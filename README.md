@@ -2,6 +2,10 @@
 
 Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve les résultats dans un volume Docker. Il produit des fichiers JSON et un bilan texte. Il n’a pas d’interface web ni de port à exposer.
 
+La version 0.2 reconnaît aussi les rapports Proxmox VE/PBS/Mail Gateway, les alertes Wazuh individuelles, les notifications Synology de stockage, instantanés, mises à jour et sécurité, ainsi que les états d’onduleur et les compteurs Kyocera rencontrés dans la boîte. Les messages administratifs et les bulletins sont identifiés séparément.
+
+Le bilan présente les problèmes récents regroupés et les rétablissements confirmés, sans énumérer les réussites habituelles. La période est de 24 heures par défaut. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés séparément ; les détails restent dans les JSON. Un format réellement nouveau ou illisible reste visible comme point à vérifier. La reconnaissance des modèles présents n’est pas une garantie de prise en charge de tous les futurs emails possibles.
+
 ## Déploiement depuis GitHub dans Portainer
 
 Le fichier `compose.yaml` est prévu pour une stack **Docker Standalone** déployée depuis GitHub dans Portainer. Il construit l’image depuis le dépôt, utilise les règles incluses dans cette image et ne dépend ni d’un `.env`, ni d’un fichier secret, ni d’un dossier de configuration présents sur le serveur.
@@ -53,7 +57,7 @@ Le processus du conteneur utilise l’utilisateur 10001. Sur l’hôte, le fichi
 
 `compose.local.yaml` déclare le secret à la fois dans le service et au niveau général. Ne commente pas une seule des deux déclarations. Un `IMAP_PASSWORD_FILE` explicitement configuré est prioritaire sur `IMAP_PASSWORD` ; un fichier absent provoque une erreur, sans repli silencieux vers la variable.
 
-La première collecte importe les emails reçus dans les 30 derniers jours, lus ou non lus. Ensuite, les nouveaux messages sont collectés toutes les cinq minutes. L’historique de départ est fixé lors de la première connexion réussie au dossier ; modifier `INITIAL_LOOKBACK_DAYS` après cela ne réinitialise pas cet historique. Les messages plus anciens que ce point de départ restent hors périmètre. Le compte et le dossier configurés sont les seuls consultés. Un sous-dossier n’est pas parcouru automatiquement. Pour un nom de dossier non ASCII, utilise son nom IMAP encodé en modified UTF-7.
+La première collecte importe les emails reçus dans les 30 derniers jours, lus ou non lus. Les lots d’import ou de réanalyse s’enchaînent avec une courte pause jusqu’à résorption de l’attente. Ensuite, les nouveaux messages sont collectés toutes les cinq minutes. L’historique de départ est fixé lors de la première connexion réussie au dossier ; modifier `INITIAL_LOOKBACK_DAYS` après cela ne réinitialise pas cet historique. Les messages plus anciens que ce point de départ restent hors périmètre. Le compte et le dossier configurés sont les seuls consultés. Un sous-dossier n’est pas parcouru automatiquement. Pour un nom de dossier non ASCII, utilise son nom IMAP encodé en modified UTF-7.
 
 ## Consulter et récupérer les résultats
 
@@ -76,13 +80,13 @@ Le dossier `/data/exports` contient :
 | `bilan.txt` | Bilan courant lisible, incluant les tâches encore en échec |
 | `daily/AAAA-MM-JJ.txt` | Dernier bilan disponible pour chaque journée, en heure suisse |
 
-Le bilan du jour est actualisé à chaque collecte. Ce n’est pas une liste des seuls événements du jour : les incidents ouverts et les observations dont la résolution n’est pas confirmée restent visibles, avec leurs dates. Il n’est envoyé à personne. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
+Le bilan est actualisé à chaque collecte. Il affiche les problèmes des dernières 24 heures et les rétablissements récents. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés à part. Les observations de faible sévérité restent dans les exports détaillés. Il n’est envoyé à personne. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
 
 Les références IMAP incluent une identité de compte hachée, le dossier, UIDVALIDITY et UID. Le Message-ID et l’empreinte SHA-256 sont aussi conservés. Un changement de UIDVALIDITY réimporte les références sans recompter les emails identiques. Deux messages de même Message-ID mais de contenu différent restent distincts. L’état des tâches est recalculé dans l’ordre des dates des emails pour supporter les imports tardifs ; un échec et une réussite à la même seconde maintiennent l’échec ouvert.
 
 ## Garantie de lecture seule de la boîte
 
-Le code impose l’ouverture avec `EXAMINE` (`readonly=True`) et la récupération avec `BODY.PEEK[]`. Il ne contient aucun déplacement, suppression, ajout d’étiquette, marquage lu/non lu, envoi SMTP ou appel à une IA externe. Il n’utilise pas `CLOSE`, qui peut expurger des messages. Aucun lien fourni dans les emails n’est ouvert et aucune instruction contenue dans un email ou un PDF n’est exécutée.
+Le code impose l’ouverture avec `EXAMINE` (`readonly=True`) et la récupération avec `BODY.PEEK[]`. Le collecteur ne contient aucun déplacement, suppression, ajout d’étiquette, marquage lu/non lu, envoi automatique ou appel à une IA externe. Un module SMTP séparé permet un envoi ponctuel uniquement sur commande explicite. Il n’utilise pas `CLOSE`, qui peut expurger des messages. Aucun lien fourni dans les emails n’est ouvert et aucune instruction contenue dans un email ou un PDF n’est exécutée.
 
 La garantie porte sur les opérations du service : un autre client ou une règle du serveur peut toujours modifier la boîte. Si ton serveur permet un compte ou des droits IMAP limités à la lecture, utilise-les en complément. Il n’existe pas d’option pour activer l’écriture dans cette version.
 
@@ -108,7 +112,21 @@ Une empreinte des règles et de la version du moteur déclenche la réanalyse pr
 
 Les règles sont adaptées aux exemples reçus, pas à tous les formats possibles de ces produits. Les PDF sont extraits dans un sous-processus avec délai et limites de ressources. Les PDF scannés sans texte, chiffrés, illisibles ou trop longs donnent un avertissement de couverture. Le moteur n’est pas un analyseur universel de rapports PDF. Il n’exécute pas de reconnaissance de texte par OCR.
 
-**Les rapports manquants ne sont pas encore surveillés.** Il faut d’abord définir un calendrier et une marge de retard par tâche. Mettre `expected_reports.enabled` à `true` est refusé pour éviter de laisser croire à une surveillance non implémentée. Les notifications externes sont absentes de cette version.
+**Les rapports manquants ne sont pas encore surveillés.** Il faut d’abord définir un calendrier et une marge de retard par tâche. Mettre `expected_reports.enabled` à `true` est refusé pour éviter de laisser croire à une surveillance non implémentée. Les envois automatiques restent désactivés. Un bilan peut être envoyé ponctuellement avec la commande ci-dessous.
+
+## Envoyer ponctuellement le bilan par email
+
+Depuis la console Portainer du conteneur, après une collecte réussie :
+
+```sh
+python -m logtriage.report --to destinataire@example.com --smtp-host smtp.example.com --smtp-port 465 --use-imap-credentials
+```
+
+Cette commande utilise explicitement l’identifiant et le mot de passe IMAP déjà configurés. Utilise-la seulement si le serveur SMTP accepte ces mêmes identifiants. Pour un compte différent, configure `SMTP_USER` et `SMTP_PASSWORD` (ou `SMTP_PASSWORD_FILE`) et retire `--use-imap-credentials`. `--from` permet de préciser l’adresse d’expédition si l’identifiant n’est pas une adresse email complète. La connexion SMTP utilise TLS avec vérification du certificat.
+
+Ajoute `--preview` pour afficher le contenu sans connexion SMTP. Le rapport utilise les résultats réels déjà disponibles, sans relancer le collecteur ni modifier la boîte. Un import encore partiel ou un bilan ancien est signalé. Une confirmation d’acceptation SMTP est conservée dans `/data/last-report-send.json` ; elle ne prouve pas à elle seule la livraison dans la boîte du destinataire. Aucun envoi quotidien n’est programmé.
+
+Les paramètres `report.window_hours`, `report.max_groups`, `report.disk_warning_percent` et `report.memory_warning_percent` sont définis dans `config/rules.json`. Au-delà du nombre maximal de groupes, un compteur annonce les autres points disponibles dans les exports.
 
 ## État du service
 
