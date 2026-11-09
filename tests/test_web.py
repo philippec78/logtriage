@@ -253,6 +253,9 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request("/api/resolve", {"id": item["id"]}, csrf=False)[0], 403)
         self.assertEqual(self.request("/api/resolve", {"id": "0" * 64})[0], 400)
         self.assertEqual(self.request("/api/resolve", {"id": item["id"]})[0], 200)
+        immediate = self.request("/api/state")[1]
+        self.assertEqual(immediate["incidents"], [])
+        self.assertTrue(any(row["state"] == "resolved" for row in immediate["checks"]))
         self.assertEqual(self.request("/api/resolve", {"id": item["id"]})[0], 200)
         state = self.request("/api/state")[1]
         self.assertEqual(state["incidents"], [])

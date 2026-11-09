@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 let csrf = '', current = null, settingsDirty = false, settingsLoaded = false, busy = false, profileChoice = null;
 const date = value => value ? new Date(value).toLocaleString('fr-CH', {dateStyle:'short',timeStyle:'short'}) : '—';
 function notice(text, error = false) { $('notice').textContent = text; $('notice').hidden = !text; $('notice').classList.toggle('error', error); }
-function view() { const name = ['bilan','rapport','reglages'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'bilan'; document.querySelectorAll('.view').forEach(section => section.hidden = section.id !== 'view-' + name); document.querySelectorAll('[data-view]').forEach(a => { if(a.dataset.view === name) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); }); }
+function view() { const name = ['bilan','controles','rapport','reglages'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'bilan'; document.querySelectorAll('.view').forEach(section => section.hidden = section.id !== 'view-' + name); document.querySelectorAll('[data-view]').forEach(a => { if(a.dataset.view === name) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); }); }
 async function api(path, body) {
   const response = await fetch(path, {method: body === undefined ? 'GET' : 'POST', credentials:'same-origin', headers:body === undefined ? {} : {'Content-Type':'application/json','X-CSRF-Token':csrf},body:body === undefined ? undefined : JSON.stringify(body)});
   const result = await response.json();
@@ -116,6 +116,7 @@ function render(state) {
   $('last-collection').textContent=date(state.status?.last_cycle_at);
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
   renderRegistry(state.clients || []);
+  renderIncidentView(state.incidents || []);
   renderClientView(state);
   settings(state);
   renderMonitoring(state);
@@ -277,6 +278,20 @@ function updateFilter(id, values, label, allLabel, registered) {
   }
   return picker.value;
 }
+function renderIncidentView(issues) {
+  const client = updateFilter('incident-client', issues.map(row => row.client || ''), clientLabel, 'Tous les clients');
+  const byClient = issues.filter(row => client === '*' || (row.client || '') === client);
+  const service = updateFilter('incident-service', byClient.map(serviceLabel), value => value, 'Tous les services');
+  const byService = byClient.filter(row => service === '*' || serviceLabel(row) === service);
+  const type = updateFilter('incident-type', byService.map(typeLabel), value => value, 'Tous les types');
+  $('incident-filters').hidden = !issues.length;
+  renderIncidents(byService.filter(row => type === '*' || typeLabel(row) === type));
+}
+$('incident-filters').addEventListener('change', event => {
+  if (event.target.id === 'incident-client') $('incident-service').value = '*';
+  if (event.target.id !== 'incident-type') $('incident-type').value = '*';
+  renderIncidentView(current.incidents || []);
+});
 function renderClientView(state) {
   const counts = state.summary?.clients_today || {};
   const rows = state.checks || [], issues = state.incidents || [];
@@ -291,8 +306,6 @@ function renderClientView(state) {
   $('message-count').textContent = client === '*' ? state.summary?.today_messages ?? '—' : counts[client]?.messages || 0;
   $('unknown-count').textContent = client === '*' ? state.summary?.today_unknown ?? '—' : counts[client]?.unknown || 0;
   for (const id of ['message-count','unknown-count']) $(id).parentElement.hidden = detailFilter;
-  $('global-digest').hidden = client !== '*' || type !== '*';
-  renderIncidents(issues.filter(matchesScope));
   renderChecks(rows);
 }
 $('client-filter').addEventListener('change', () => {
@@ -494,7 +507,7 @@ function renderChecks(rows) {
   const query = $('check-search').value.toLocaleLowerCase('fr').trim();
   const filter = $('check-status').value;
   const list = $('check-groups');
-  const matching = rows.filter(r => (!filter || checkKind(r) === filter) &&
+  const matching = rows.filter(r => (!filter || checkKind(r) === filter || (filter === 'resolved' && r.state === 'resolved')) &&
     (clientLabel(r.client)+' '+r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
   const signature = JSON.stringify([query,filter,matching]);
   if (list.dataset.rows === signature) { updateBulkBar(); return; }
@@ -541,7 +554,7 @@ function renderChecks(rows) {
         lastService = service;
       }
       const tr = body.insertRow(), name = tr.insertCell(), kind = checkKind(row);
-      const label = row.missing && row.state === 'warning' ? 'En retard' :
+      const label = row.state === 'resolved' ? 'Résolu' : row.missing && row.state === 'warning' ? 'En retard' :
         ({good:'Sans incident',warn:'Avertissement',bad:'Échec',other:'À confirmer'})[kind];
       const marker = element('span','signal '+kind);
       marker.title = label;

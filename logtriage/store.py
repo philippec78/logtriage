@@ -150,7 +150,7 @@ class Store:
             open_tasks = {t["signal_id"]: t for t in tasks.values() if t["state"] in ("open", "warning")}
             if not pending_ids.issubset(open_tasks):
                 raise ValueError("Un incident sélectionné a changé. Vérifie ta sélection avant de réessayer.")
-            at = now()
+            at = moment.isoformat()
             with self.db:
                 self.db.executemany("INSERT INTO resolutions VALUES (?,?,?,?)",
                                     [(key, open_tasks[key]["scope"], open_tasks[key]["key"], at) for key in pending_ids])

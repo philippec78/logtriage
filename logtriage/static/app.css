@@ -53,9 +53,9 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .dashboard-heading h1 {margin:0}
 .dashboard-heading span {font-size:.84rem;color:var(--muted)}
 #refresh,#resolve-incident {min-height:30px;padding:3px 10px;font-size:.85rem}
-.overview-grid {display:grid;grid-template-columns:minmax(290px,2fr) minmax(0,3fr);gap:18px;margin-bottom:18px}
-.overview-grid>section {display:flex;flex-direction:column;min-width:0}
-#view-bilan h2 {font-size:1rem;letter-spacing:.045em;text-transform:uppercase}
+#view-controles .overview {margin-bottom:18px}
+#view-rapport #global-digest {margin-top:24px}
+#view-bilan h2,#view-controles h2 {font-size:1rem;letter-spacing:.045em;text-transform:uppercase}
 #incident-heading span {color:var(--muted);font-weight:500;letter-spacing:0}
 .dash-surface {background:var(--strip);border:1px solid var(--line);border-radius:4px}
 .overview-body,.issues-body {margin-top:6px;padding:10px 14px;flex:1}
@@ -73,9 +73,9 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #issues-head,#incident-list label {display:grid;grid-template-columns:18px 7.5rem minmax(0,1fr);align-items:baseline;gap:7px}
 #issues-head {font-weight:600;font-size:.76rem;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:4px}
 #issues-head span:first-child {grid-column:2}
-#incident-list {max-height:7.8rem;margin:0;border:0}
-#incident-list label {padding:3px 0;font-size:.84rem}
-#incident-list li + li {border:0}
+#incident-list {max-height:none;overflow:visible;margin:0;border:0}
+#incident-list label {padding:8px 0;font-size:.84rem}
+#incident-list li + li {border-top:1px solid var(--line)}
 #incident-list input {height:15px;width:15px;min-height:15px;align-self:center;margin:0}
 .issue-name::before,.signal {content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--state)}
 .issue-name::before {margin-right:6px;background:var(--warn)}
@@ -121,7 +121,6 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .schedule-value {margin-left:auto;text-align:right;font-size:.88rem;font-variant-numeric:tabular-nums}
 #proposal-status:empty,#pending-total:empty {display:none}
 @media(max-width:800px) {
-  .overview-grid {grid-template-columns:minmax(0,1fr);gap:15px}
   .dashboard-heading {align-items:start}
   .dashboard-heading>div {align-items:end;flex-direction:column}
   .dashboard-heading span {text-align:right}

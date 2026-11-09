@@ -11,13 +11,31 @@
   </form>
 </div>
 <div id="application" hidden>
-  <header><a href="#bilan" class="brand"><i class="brand-mark" aria-hidden="true"></i>Logtriage</a><nav aria-label="Navigation principale"><a href="#bilan" data-view="bilan">Tableau de bord</a><a href="#rapport" data-view="rapport">Envoyer un rapport</a><a href="#reglages" data-view="reglages">Réglages</a></nav><button id="logout" class="quiet" type="button">Se déconnecter</button></header>
+  <header><a href="#bilan" class="brand"><i class="brand-mark" aria-hidden="true"></i>Logtriage</a><nav aria-label="Navigation principale"><a href="#bilan" data-view="bilan">Tableau de bord</a><a href="#controles" data-view="controles">Contrôles</a><a href="#rapport" data-view="rapport">Envoyer un rapport</a><a href="#reglages" data-view="reglages">Réglages</a></nav><button id="logout" class="quiet" type="button">Se déconnecter</button></header>
   <main id="content" tabindex="-1">
     <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
     <section id="view-bilan" class="view" aria-labelledby="bilan-title">
       <div class="dashboard-heading"><h1 id="bilan-title">Tableau de bord</h1>
         <div><span id="collection-status">Chargement de la collecte…</span><button id="refresh" type="button">↻ Actualiser</button></div>
       </div>
+      <div id="incident-filters" class="client-toolbar" hidden>
+        <label for="incident-client">Client</label><select id="incident-client"><option value="*">Tous les clients</option></select>
+        <label for="incident-service">Service</label><select id="incident-service"><option value="*">Tous les services</option></select>
+        <label for="incident-type">Type de contrôle</label><select id="incident-type"><option value="*">Tous les types</option></select>
+      </div>
+      <section id="incident-panel" aria-labelledby="incident-heading">
+        <h2 id="incident-heading" tabindex="-1">Incidents ouverts <span id="incident-count"></span></h2>
+        <div class="dash-surface issues-body">
+          <div id="issues-head" aria-hidden="true"><span>Dernier signal</span><span>Incident</span></div>
+          <ul id="incident-list" aria-labelledby="incident-heading"></ul>
+          <p id="incident-empty" hidden>Aucun incident ouvert.</p>
+          <div class="issue-actions"><span id="incident-hint">Coche les incidents résolus.</span><button id="resolve-incident" type="button" disabled>Valider la sélection</button></div>
+          <p id="resolution-status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+    </section>
+    <section id="view-controles" class="view" hidden aria-labelledby="controles-title">
+      <div class="dashboard-heading"><h1 id="controles-title">Contrôles</h1></div>
       <div class="client-toolbar"><label for="client-filter">Client</label><select id="client-filter"><option value="*">Tous les clients</option></select>
       </div>
       <section id="client-services" aria-labelledby="services-title" hidden>
@@ -25,28 +43,16 @@
         <div id="service-list" role="group" aria-labelledby="services-title"></div>
       </section>
       <div class="client-toolbar"><label for="type-filter">Type de contrôle</label><select id="type-filter"><option value="*">Tous les types</option></select></div>
-      <div class="overview-grid">
-        <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
-          <div class="dash-surface overview-body"><div id="status-totals" class="status-totals"></div>
-            <p id="pending-total" class="hint"></p>
-            <dl class="summary"><div><dt>Emails du jour</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
-          </div>
-        </section>
-        <section id="incident-panel" aria-labelledby="incident-heading">
-          <h2 id="incident-heading" tabindex="-1">Incidents ouverts <span id="incident-count"></span></h2>
-          <div class="dash-surface issues-body">
-            <div id="issues-head" aria-hidden="true"><span>Dernier signal</span><span>Incident</span></div>
-            <ul id="incident-list" aria-labelledby="incident-heading"></ul>
-            <p id="incident-empty" hidden>Aucun incident ouvert.</p>
-            <div class="issue-actions"><span id="incident-hint">Coche les incidents résolus.</span><button id="resolve-incident" type="button" disabled>Valider la sélection</button></div>
-            <p id="resolution-status" role="status" aria-live="polite"></p>
-          </div>
-        </section>
-      </div>
+      <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
+        <div class="dash-surface overview-body"><div id="status-totals" class="status-totals"></div>
+          <p id="pending-total" class="hint"></p>
+          <dl class="summary"><div><dt>Emails du jour</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
+        </div>
+      </section>
       <section class="checks-panel" aria-labelledby="checks-title">
         <div class="checks-head"><h2 id="checks-title">Mes contrôles</h2>
           <div class="check-filters"><label><span class="sr-only">État</span><select id="check-status"><option value="">Tous les états</option>
-          <option value="good">Sans incident</option><option value="warn">Avertissement</option>
+          <option value="good">Sans incident</option><option value="resolved">Incidents résolus</option><option value="warn">Avertissement</option>
           <option value="bad">Échec</option><option value="other">À confirmer</option></select></label>
           <label><span class="sr-only">Rechercher un serveur ou une tâche</span><input id="check-search" type="search" placeholder="Serveur ou tâche"></label>
           <a href="#reglages">Gérer les contrôles</a></div></div>
@@ -59,8 +65,6 @@
         <p id="bulk-status" role="status"></p>
         <div id="check-groups" class="dash-surface"></div>
       </section>
-      <section id="global-digest"><div class="section-heading"><h2>Dernier bilan global</h2><a href="#rapport">Préparer un envoi</a></div>
-      <div id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</div></section>
     </section>
     <section id="view-rapport" class="view" hidden aria-labelledby="rapport-title">
       <div class="page-heading"><div><h1 id="rapport-title">Envoyer un rapport</h1><p>Prépare le bilan, relis-le, puis envoie cet aperçu.</p></div></div>
@@ -79,6 +83,9 @@
         <div class="send-block"><p id="delivery-status" role="status">Aucun envoi effectué depuis cet aperçu.</p><button id="send" type="button" disabled>Envoyer cet aperçu</button></div>
         <p id="last-send" class="muted"></p>
       </aside></div>
+      <section id="global-digest" aria-labelledby="digest-title"><div class="section-heading"><h2 id="digest-title">Dernier bilan global</h2></div>
+        <div id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</div>
+      </section>
     </section>
     <section id="view-reglages" class="view" hidden aria-labelledby="reglages-title">
       <div class="page-heading"><div><h1 id="reglages-title">Réglages</h1><p>Les modifications sont conservées après le redémarrage du conteneur.</p></div></div>
