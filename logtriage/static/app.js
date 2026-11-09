@@ -69,6 +69,7 @@ function renderIncidents(rows) {
       checkbox.checked = selected.has(row.id);
       const text = document.createElement('span');
       text.textContent = row.summary;
+      text.append(element('small','issue-client',clientLabel(row.client)));
       const when = element('time','issue-date',date(row.date));
       when.dateTime = row.date;
       text.className = 'issue-name';
@@ -95,11 +96,9 @@ function render(state) {
   const collection=state.status?.collection, status=state.status?.state;
   const stale=state.status && Date.now()-Date.parse(state.status.last_cycle_at)>Math.max(900,state.status.poll_seconds*3)*1000;
   $('collection-status').textContent=!state.status ? 'La première collecte n’est pas encore disponible.' : stale ? 'La dernière collecte est ancienne. Vérifie le service avant de te fier au bilan.' : status !== 'ok' ? 'Collecte à vérifier : le bilan reflète les données disponibles.' : collection?.pending ? `Collecte en cours : ${collection.pending} emails restent à analyser.` : 'Collecte à jour · boîte consultée en lecture seule';
-  $('message-count').textContent=state.summary?.today_messages?.toLocaleString('fr-CH') ?? '—';
-  $('unknown-count').textContent=state.summary?.today_unknown ?? '—'; $('last-collection').textContent=date(state.status?.last_cycle_at);
+  $('last-collection').textContent=date(state.status?.last_cycle_at);
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
-  renderIncidents(state.incidents || []);
-  renderChecks(state.checks || []);
+  renderClientView(state);
   settings(state);
   renderMonitoring(state);
   const preview=state.report.preview, job=state.report.job, running=job.state==='running';
@@ -206,7 +205,33 @@ const familyLabels = new Map([
   ['Tâches planifiées',['synology-scheduler']], ['Impression',['printer']],
   ['Intégration continue',['github-actions']], ['Contrôles personnalisés',['custom']]
 ].flatMap(([label, keys]) => keys.map(key => [key,label])));
+const clientLabel = domain => domain || 'Domaine indéterminé';
+function renderClientView(state) {
+  const picker = $('client-filter');
+  const counts = state.summary?.clients_today || {};
+  const rows = state.checks || [], issues = state.incidents || [];
+  const domains = new Set([...Object.keys(counts), ...rows.map(r => r.client || ''), ...issues.map(r => r.client || '')]);
+  const selected = picker.value;
+  if (selected !== '*') domains.add(selected);
+  const items = [...domains].sort((a,b) => clientLabel(a).localeCompare(clientLabel(b),'fr'));
+  const signature = JSON.stringify(items);
+  if (picker.dataset.domains !== signature) {
+    picker.replaceChildren(new Option('Tous les clients','*'), ...items.map(d => new Option(clientLabel(d),d)));
+    picker.value = selected;
+    picker.dataset.domains = signature;
+  }
+  const all = selected === '*';
+  $('message-count').textContent = all ? state.summary?.today_messages ?? '—' : counts[selected]?.messages || 0;
+  $('unknown-count').textContent = all ? state.summary?.today_unknown ?? '—' : counts[selected]?.unknown || 0;
+  renderIncidents(issues.filter(r => all || (r.client || '') === selected));
+  renderChecks(rows);
+}
+$('client-filter').addEventListener('change', () => renderClientView(current));
+$('check-grouping').addEventListener('change', () => renderChecks(current.checks || []));
 function renderChecks(rows) {
+  const selectedClient = $('client-filter').value;
+  if (selectedClient !== '*') rows = rows.filter(r => (r.client || '') === selectedClient);
+  const byClient = $('check-grouping').value === 'client';
   const counts = {good:0, warn:0, bad:0, other:0};
   rows.forEach(row => counts[checkKind(row)]++);
   const totals = $('status-totals');
@@ -228,15 +253,16 @@ function renderChecks(rows) {
   const filter = $('check-status').value;
   const list = $('check-groups');
   const matching = rows.filter(r => (!filter || checkKind(r) === filter) &&
-    (r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
-  const signature = JSON.stringify([query,filter,matching]);
+    (clientLabel(r.client)+' '+r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
+  const signature = JSON.stringify([query,filter,byClient,matching]);
   if (list.dataset.rows === signature) return;
   list.dataset.rows = signature;
   const groups = new Map();
   for (const row of matching) {
     const family = row.missing ? 'Rapports attendus' : familyLabels.get(row.family) || row.family || 'Autres contrôles';
-    if (!groups.has(family)) groups.set(family, []);
-    groups.get(family).push(row);
+    const section = byClient ? clientLabel(row.client) : family;
+    if (!groups.has(section)) groups.set(section, []);
+    groups.get(section).push(row);
   }
   if (!groups.size) {
     list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle à afficher pour le moment.'));
@@ -253,7 +279,7 @@ function renderChecks(rows) {
   for (const family of [...groups.keys()].sort((a,b)=>a.localeCompare(b,'fr'))) {
     const body = table.createTBody();
     body.className = 'check-group';
-    const heading = element('th','family-title',family);
+    const heading = element('th',byClient ? 'family-title client-domain' : 'family-title',family);
     heading.scope = 'rowgroup';
     heading.colSpan = 4;
     body.insertRow().append(heading);
@@ -265,7 +291,7 @@ function renderChecks(rows) {
       marker.title = label;
       marker.setAttribute('aria-label',label);
       marker.setAttribute('role','img');
-      name.append(marker,element('span','check-name',row.name),element('small','check-host',row.host));
+      name.append(marker,element('span','check-name',row.name),element('small','check-host',byClient ? row.host : row.host+' · '+clientLabel(row.client)));
       tr.insertCell().textContent = date(row.date);
       const history = tr.insertCell(), strip = element('span','signal-strip');
       for (const [stamp,event] of row.history) {
@@ -278,7 +304,7 @@ function renderChecks(rows) {
       history.append(row.history.length ? strip : '—');
       const inspect = button('', () => {
         $('detail-title').textContent = row.name;
-        $('detail-context').textContent = row.host+' · '+label+' · '+date(row.date);
+        $('detail-context').textContent = clientLabel(row.client)+' · '+row.host+' · '+label+' · '+date(row.date);
         const entries = row.history.map(([stamp,event]) => element('li','',date(stamp)+' · '+(executionLabels[event] || 'À confirmer')));
         const content = entries.length ? element('ol','') : element('p','','Aucun signal reçu aujourd’hui.');
         content.append(...entries);

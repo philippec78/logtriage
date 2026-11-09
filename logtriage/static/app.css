@@ -154,3 +154,10 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
   :root {--bg:#121c24;--surface:#1a2833;--text:#e7eef4;--muted:#b4c2ce;--line:#394d5a;--strip:#263a49;--primary:#8ccaf4;--primary-hover:#a6d9fb;--focus:#8acfff;--other:#91a3b0}
   .signal,.state-label::before,#incident-list label::before {filter:brightness(1.45)}
 }
+
+.client-toolbar {display:flex;align-items:center;gap:10px;margin:0 0 15px}
+.client-toolbar label {margin:0;font-weight:600}
+.client-toolbar select {width:auto;max-width:78%;font-size:.9rem;min-height:34px;padding:4px 10px}
+#incident-list .issue-client {display:inline;margin-left:.55em;font-weight:400;color:var(--muted)}
+.check-filters {flex-wrap:wrap}
+.check-table .client-domain {text-transform:none;letter-spacing:0}

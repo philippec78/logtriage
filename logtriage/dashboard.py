@@ -1,5 +1,6 @@
 """Lecture compacte des contrôles, de leur dernier signal et de leur historique du jour."""
 from collections import defaultdict, deque
+from .clients import message_client
 from .digest import day_bounds
 
 
@@ -10,7 +11,7 @@ def checks(tasks, messages, moment, tz):
         if start <= m["date"] <= end:
             for e in [m, *m.get("task_events", [])]:
                 if e.get("task_key"):
-                    history[m["scope"], e["task_key"]].append([m["date"], e["execution"]])
+                    history[m["scope"], e["task_key"], message_client(m)].append([m["date"], e["execution"]])
     rows = []
     for t in tasks:
         missing = t.get("format") == "missing-report"
@@ -23,7 +24,7 @@ def checks(tasks, messages, moment, tz):
         parts = t["key"].removeprefix("missing|").split("|")
         host = parts[1] if len(parts) > 1 else "Source non identifiée"
         name = " · ".join([parts[0], *parts[2:]])
-        rows.append({"family": parts[0], "host": host, "name": ("Rapport attendu · " if missing else "") + name,
+        rows.append({"client": t.get("client", ""), "family": parts[0], "host": host, "name": ("Rapport attendu · " if missing else "") + name,
                      "state": state, "missing": missing, "date": stamp,
-                     "history": list(history[t["scope"], t["key"]])})
+                     "history": list(history[t["scope"], t["key"], t.get("client", "")])})
     return sorted(rows, key=lambda r: (r["host"].casefold(), r["name"].casefold()))

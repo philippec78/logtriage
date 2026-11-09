@@ -7,6 +7,8 @@ import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from .clients import message_client
+
 
 def derive_state(messages, resolutions=None):
     tasks, observations = {}, {}
@@ -14,12 +16,14 @@ def derive_state(messages, resolutions=None):
     ordered = sorted(messages, key=lambda m: (m["date"], m["sha256"]))
     for date, batch in itertools.groupby(ordered, key=lambda m: m["date"]):
         signals = collections.defaultdict(set)
+        legacy_signals = collections.defaultdict(set)
         for message in batch:
+            client = message_client(message)
             events = ([message] if message.get("task_key") else []) + message.get("task_events", [])
             for event in events:
-                identity = message["scope"] + "|" + event["task_key"]
+                identity = (message["scope"], event["task_key"], client)
                 task = tasks.setdefault(identity, {
-                    "key": event["task_key"], "scope": message["scope"], "state": "unknown",
+                    "key": event["task_key"], "client": client, "scope": message["scope"], "state": "unknown",
                     "failures": [], "last_failure": None, "last_success": None,
                     "active_occurrences": 0, "last_problem": None, "resolved_at": None})
                 task.update(last_message_date=message["date"], latest_category=message["category"],
@@ -37,6 +41,7 @@ def derive_state(messages, resolutions=None):
                     task["resolved_at"] = None
                     task.pop("resolved_by", None)
                     signals[identity].add(message["sha256"])
+                    legacy_signals[identity[:2]].add(message["sha256"])
                     task["summary"] = event.get("summary", message["summary"])
                     task["evidence"] = event.get("evidence", message["evidence"])
                     if execution == "failure":
@@ -68,9 +73,18 @@ def derive_state(messages, resolutions=None):
             source = json.dumps([task["scope"], task["key"], date, sorted(hashes)])
             token = hashlib.sha256(source.encode()).hexdigest()
             task["signal_id"] = token
-            if token in resolutions:
-                task.update(state="resolved", resolved_at=resolutions[token], resolved_by="manual", active_occurrences=0)
-    return tasks, observations
+            closed = resolutions.get(token)
+            combined = legacy_signals[identity[:2]]
+            if not closed and resolutions and hashes != combined:
+                legacy = json.dumps([task["scope"], task["key"], date, sorted(combined)])
+                closed = resolutions.get(hashlib.sha256(legacy.encode()).hexdigest())
+            if closed:
+                task.update(state="resolved", resolved_at=closed, resolved_by="manual", active_occurrences=0)
+    # Garder les identifiants historiques non ambigus pour les lecteurs existants.
+    counts = collections.Counter((scope, key) for scope, key, _ in tasks)
+    named = {(scope + "|" + key if counts[scope, key] == 1 else json.dumps([scope, key, client])): task
+             for (scope, key, client), task in tasks.items()}
+    return named, observations
 
 
 def readable(value, length=330):
@@ -119,7 +133,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         identity = task["key"]
         if task.get("format") in ("synology-snapshot-overlap", "synology-snapshot"):
             identity = "|".join(task["key"].split("|")[:2])
-        group_id = (task["scope"], identity)
+        group_id = (task["scope"], task.get("client", ""), identity)
         group = groups.setdefault(group_id, {"summary": task.get("summary", task["key"]),
                                               "date": task["last_problem"], "severity": 0 if task["state"] == "open" else 1,
                                               "occurrences": 0, "resources": set()})

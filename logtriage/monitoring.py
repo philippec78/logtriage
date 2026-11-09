@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from .clients import message_client
 from .private import locked, private_dir, read_json, write_private
 
 
@@ -33,9 +34,11 @@ def change(directory, section, key, item=None, previous=None):
 
 
 def task_options(tasks):
-    return [{"id": identity(t["scope"], t["key"]), "key": t["key"], "scope": t["scope"],
-             "label": " · ".join(t["key"].split("|"))} for t in tasks
-            if t["scope"].startswith("imap:") and t.get("format") != "missing-report"]
+    # Un calendrier existant surveille une tâche de sa boîte, y compris si plusieurs domaines la signalent.
+    keys = dict.fromkeys((t["scope"], t["key"]) for t in tasks
+                         if t["scope"].startswith("imap:") and t.get("format") != "missing-report")
+    return [{"id": identity(scope, key), "key": key, "scope": scope,
+             "label": " · ".join(key.split("|"))} for scope, key in keys]
 
 
 def schedule(directory, values):
@@ -68,13 +71,16 @@ def schedule_events(schedules, messages, status, moment, tz):
     until = datetime.fromisoformat(status.get("checked_through", status["last_cycle_at"]))
     zone = ZoneInfo(tz)
     arrivals = defaultdict(set)
+    clients = defaultdict(set)
     for m in messages:
         stamp = datetime.fromisoformat(m.get("received_at") or m["date"])
         if stamp > until:
             continue
         for event in [m, *m.get("task_events", [])]:
             if event.get("task_key"):
-                arrivals[(m["scope"], event["task_key"])].add(stamp)
+                key = (m["scope"], event["task_key"])
+                arrivals[key].add(stamp)
+                clients[key].add(message_client(m))
     events = []
     for row in schedules:
         if row["scope"] != status.get("scope"):
@@ -86,12 +92,14 @@ def schedule_events(schedules, messages, status, moment, tz):
         # La première arrivée du jour permet de reconnaître aussi un retard rattrapé.
         for stamp in times:
             first_arrivals.setdefault(stamp.astimezone(zone).date(), stamp)
+        domains = clients[row["scope"], row["key"]]
+        client = next(iter(domains)) if len(domains) == 1 else ""
         task = "missing|" + row["key"]
         def event(stamp, execution, summary):
             return {"sha256": identity(row["id"], row["since"], stamp.isoformat(), execution),
                     "scope": row["scope"], "date": stamp.astimezone(timezone.utc).isoformat(),
                     "category": "avertissement" if execution == "warning" else "information",
-                    "format": "missing-report", "task_key": task, "execution": execution,
+                    "format": "missing-report", "client": client, "task_key": task, "execution": execution,
                     "observations": [], "evidence": [], "summary": summary}
         for stamp in times:
             if stamp > since:

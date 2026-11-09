@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .calendar_suggestions import suggestions
+from .clients import message_client
 from .dashboard import checks
 from .digest import day_messages, derive_state, render_digest
 from .user_rules import apply_rules
@@ -28,7 +29,12 @@ def atomic_json(path, value):
 
 def daily_counts(messages, moment, tz):
     today = day_messages(messages, moment, tz)
-    return {"report_day": moment.astimezone(ZoneInfo(tz)).date().isoformat(), "today_messages": len(today),
+    by_client = {}
+    for message in today:
+        counts = by_client.setdefault(message_client(message), {"messages": 0, "unknown": 0})
+        counts["messages"] += 1
+        counts["unknown"] += not message.get("recognized")
+    return {"clients_today": by_client, "report_day": moment.astimezone(ZoneInfo(tz)).date().isoformat(), "today_messages": len(today),
             "today_unknown": sum(not m.get("recognized") for m in today)}
 
 
@@ -162,7 +168,7 @@ class Store:
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})
-        pending = [{"id": t["signal_id"], "summary": t.get("summary") or t["key"],
+        pending = [{"id": t["signal_id"], "client": t["client"], "summary": t.get("summary") or t["key"],
                     "missing": t.get("format") == "missing-report", "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
                    if t["state"] in ("open", "warning")]
         pending.sort(key=lambda t: t["date"], reverse=True)

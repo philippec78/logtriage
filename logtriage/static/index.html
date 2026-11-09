@@ -18,6 +18,7 @@
       <div class="dashboard-heading"><h1 id="bilan-title">Tableau de bord</h1>
         <div><span id="collection-status">Chargement de la collecte…</span><button id="refresh" type="button">↻ Actualiser</button></div>
       </div>
+      <div class="client-toolbar"><label for="client-filter">Client</label><select id="client-filter"><option value="*">Tous les clients</option></select></div>
       <div class="overview-grid">
         <section class="overview" aria-labelledby="overview-title"><h2 id="overview-title">Vue d’ensemble</h2>
           <div class="dash-surface overview-body"><div id="status-totals" class="status-totals"></div>
@@ -38,14 +39,14 @@
       </div>
       <section class="checks-panel" aria-labelledby="checks-title">
         <div class="checks-head"><h2 id="checks-title">Mes contrôles</h2>
-          <div class="check-filters"><label><span class="sr-only">État</span><select id="check-status"><option value="">Tous les états</option>
+          <div class="check-filters"><label><span class="sr-only">Regrouper les contrôles</span><select id="check-grouping"><option value="client">Par client</option><option value="family">Par famille</option></select></label><label><span class="sr-only">État</span><select id="check-status"><option value="">Tous les états</option>
           <option value="good">Sans incident</option><option value="warn">Avertissement</option>
           <option value="bad">Échec</option><option value="other">À confirmer</option></select></label>
           <label><span class="sr-only">Rechercher un serveur ou une tâche</span><input id="check-search" type="search" placeholder="Serveur ou tâche"></label>
           <a href="#reglages">Gérer les contrôles</a></div></div>
         <div id="check-groups" class="dash-surface"></div>
       </section>
-      <div class="section-heading"><h2>Dernier bilan disponible</h2><a href="#rapport">Préparer un envoi</a></div>
+      <div class="section-heading"><h2>Dernier bilan global</h2><a href="#rapport">Préparer un envoi</a></div>
       <div id="latest-digest" class="report-text">Le bilan apparaîtra après la première collecte.</div>
     </section>
     <section id="view-rapport" class="view" hidden aria-labelledby="rapport-title">
