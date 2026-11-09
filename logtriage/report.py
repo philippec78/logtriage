@@ -15,7 +15,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .__main__ import Config
-from .store import atomic_json
+from .store import atomic_json, current_bilan
+from .settings import load_settings
 
 
 def email_address(value):
@@ -30,9 +31,13 @@ def email_address(value):
 def prepare_report(directory, recipient, sender, current_time=None, report_text=None):
     recipient, sender = email_address(recipient), email_address(sender)
     current_time = current_time or datetime.now(timezone.utc)
-    summary = json.loads((directory / "exports/summary.json").read_text(encoding="utf-8"))
+    tz = os.environ.get("TZ", "Europe/Zurich")
+    if report_text is None:
+        summary, report = current_bilan(directory, current_time, tz, load_settings(directory))
+    else:
+        summary = json.loads((directory / "exports/summary.json").read_text(encoding="utf-8"))
+        report = report_text
     status = json.loads((directory / "status.json").read_text(encoding="utf-8"))
-    report = report_text if report_text is not None else (directory / "exports/bilan.txt").read_text(encoding="utf-8")
     if not summary.get("total_messages"):
         raise ValueError("Aucun email analysé : attends la première collecte")
     generated = datetime.fromisoformat(summary["generated_at"])
@@ -83,7 +88,7 @@ def report_html(body):
             continue
         if line.startswith("Bilan des serveurs —"):
             parts.append(f'<h1 style="font-size:22px">{line}</h1>')
-        elif line in ("À EXAMINER EN PRIORITÉ", "PROBLÈMES TOUJOURS OUVERTS", "RÉTABLIS DANS LES DERNIÈRES 24 H"):
+        elif line in ("À EXAMINER EN PRIORITÉ", "PROBLÈMES TOUJOURS OUVERTS", "RÉTABLIS AUJOURD’HUI"):
             parts.append(f'<h2 style="font-size:18px;margin:24px 0 8px;border-bottom:1px solid #aabbb2">{line.capitalize()}</h2>')
         elif line.startswith("- "):
             parts.append(f'<p style="margin:12px 0 0"><strong>{line[2:]}</strong></p>')

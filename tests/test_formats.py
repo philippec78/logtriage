@@ -5,7 +5,7 @@ from email.message import EmailMessage
 
 from logtriage.__main__ import load_rules
 from logtriage.analyze import analyze
-from logtriage.digest import derive_state, render_digest
+from logtriage.digest import day_bounds, derive_state, render_digest
 
 
 def parse(subject, body, sender="reports@example.com", day=9):
@@ -192,17 +192,35 @@ class DigestTests(unittest.TestCase):
         self.assertNotIn("archive-A", older)
         self.assertIn("archive-A", report.split("RÉTABLIS")[1])
 
-    def test_recovery_window_uses_the_first_success_and_exact_24h_boundary(self):
+    def test_recovery_disappears_at_local_midnight_even_after_another_success(self):
         logs = [self.scheduler("archive", 0, 9), self.scheduler("archive", 1, 5),
                 self.scheduler("archive", 0, 8)]
-        boundary = datetime(2026, 11, 9, 10, tzinfo=timezone.utc)
+        midnight = datetime(2026, 11, 8, 23, tzinfo=timezone.utc)
         for legacy in (False, True):
             with self.subTest(legacy=legacy):
-                self.assertIn("08.11.2026 à 11:00", self.digest(logs, boundary, legacy, window_hours=1))
-                self.assertNotIn("RÉTABLIS", self.digest(logs, boundary + timedelta(seconds=1),
-                                                       legacy, window_hours=72))
-        future = [self.scheduler("archive", 1, 5), self.scheduler("archive", 0, 10)]
-        self.assertNotIn("RÉTABLIS", self.digest(future, boundary))
+                self.assertIn("08.11.2026 à 11:00", self.digest(logs, midnight - timedelta(seconds=1), legacy))
+                self.assertNotIn("RÉTABLIS", self.digest(logs, midnight, legacy))
+                self.assertNotIn("RÉTABLIS", self.digest(logs, midnight + timedelta(hours=13), legacy))
+
+    def test_civil_midnight_on_both_dst_transitions(self):
+        for noon, expected in [("2026-03-29", "2026-03-28T23:00:00+00:00"),
+                               ("2026-10-25", "2026-10-24T22:00:00+00:00")]:
+            start, _ = day_bounds(datetime.fromisoformat(noon + "T12:00:00+00:00"), "Europe/Zurich")
+            self.assertEqual(start, expected)
+
+    def test_only_todays_mail_and_older_unresolved_tasks_are_visible(self):
+        old = parse("Équipement veille", "Inconnu")
+        today = parse("Équipement actuel", "Inconnu")
+        future = parse("Équipement futur", "Inconnu")
+        old["date"], today["date"], future["date"] = ("2026-11-08T22:59:59+00:00",
+                "2026-11-08T23:00:00+00:00", "2026-11-09T09:00:00+00:00")
+        logs = [old, today, future, self.scheduler("reste-ouvert", 1, 8)]
+        report = self.digest(logs, datetime(2026, 11, 8, 23, 1, tzinfo=timezone.utc), window_hours=720)
+        self.assertIn("1 email reçu", report)
+        self.assertIn("reste-ouvert", report)
+        self.assertIn("Équipement actuel", report)
+        self.assertNotIn("Équipement veille", report)
+        self.assertNotIn("Équipement futur", report)
 
     def test_only_the_current_episode_can_be_reported_as_recovered(self):
         logs = [self.scheduler("archive", code, day) for day, code in [(4, 1), (5, 0), (8, 1), (9, 0)]]

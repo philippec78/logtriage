@@ -90,14 +90,14 @@ class WebTests(unittest.TestCase):
 
     def test_csrf_and_origin_are_required_before_mutation(self):
         self.login()
-        self.assertEqual(self.request("/api/settings", {"window_hours": 48}, csrf=False)[0], 403)
-        self.assertEqual(self.request("/api/settings", {"window_hours": 48}, origin=False)[0], 403)
-        self.assertEqual(load_settings(self.directory)["window_hours"], 24)
+        self.assertEqual(self.request("/api/settings", {"max_groups": 48}, csrf=False)[0], 403)
+        self.assertEqual(self.request("/api/settings", {"max_groups": 48}, origin=False)[0], 403)
+        self.assertEqual(load_settings(self.directory)["max_groups"], 20)
 
     def test_settings_validation_and_persistence(self):
         self.login()
-        self.assertEqual(self.request("/api/settings", {"window_hours": 48, "poll_seconds": 60})[0], 200)
-        self.assertEqual(load_settings(self.directory)["window_hours"], 48)
+        self.assertEqual(self.request("/api/settings", {"max_groups": 48, "poll_seconds": 60})[0], 200)
+        self.assertEqual(load_settings(self.directory)["max_groups"], 48)
         self.assertEqual(self.request("/api/settings", {"poll_seconds": 0})[0], 400)
         self.assertEqual(self.request("/api/settings", {"recipient": "r@example.com\nBcc: other@example.com"})[0], 400)
         self.assertEqual(self.request("/api/settings", {"imap_password": "new"})[0], 400)
@@ -152,6 +152,15 @@ class WebTests(unittest.TestCase):
             self.assertEqual(smtp.call_count, 1)
             self.assertEqual(smtp.call_args.args[0].get_content(), preview["body"])
             self.assertEqual(self.request("/api/send", {"id": preview["id"]})[0], 400)
+
+    def test_yesterdays_preview_is_hidden_and_cannot_be_sent(self):
+        self.fixture()
+        self.app.reports._preview(False)
+        preview = self.app.reports.state()["preview"]
+        with patch.object(self.app.reports, "report_day", return_value="2099-01-01"):
+            self.assertIsNone(self.app.reports.state()["preview"])
+            with self.assertRaisesRegex(ValueError, "journée en cours"):
+                self.app.reports._send(preview["id"])
 
     def test_bulk_resolution_is_atomic_idempotent_and_only_affects_checked_rows(self):
         self.fixture()

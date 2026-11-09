@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from .digest import derive_state, render_digest
-from .private import locked
+from .digest import day_messages, derive_state, render_digest
+from .private import locked, read_json
 
 
 def now():
@@ -20,6 +20,27 @@ def atomic_json(path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, path)
+
+
+def daily_counts(messages, moment, tz):
+    today = day_messages(messages, moment, tz)
+    return {"report_day": moment.astimezone(ZoneInfo(tz)).date().isoformat(), "today_messages": len(today),
+            "today_unknown": sum(not m.get("recognized") for m in today)}
+
+
+def current_bilan(directory, moment, tz, settings):
+    """À minuit, présenter le nouveau jour même si la collecte suivante n’a pas encore eu lieu."""
+    export = directory / "exports"
+    with locked(directory / "export.lock"):
+        summary = read_json(export / "summary.json")
+        if not summary:
+            return {}, ""
+        if summary.get("report_day") == moment.astimezone(ZoneInfo(tz)).date().isoformat():
+            return summary, (export / "bilan.txt").read_text(encoding="utf-8")
+        messages = read_json(export / "messages.json", [])
+        summary.update(daily_counts(messages, moment, tz))
+        return summary, render_digest(summary, messages, read_json(export / "tasks.json", []),
+                                     read_json(export / "observations.json", []), tz, settings, moment)
 
 
 class Store:
@@ -104,7 +125,8 @@ class Store:
             tasks, observations = derive_state(messages, resolutions)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))
-        summary = {"generated_at": now(), "mode": "read_only", "total_messages": len(messages),
+        moment = datetime.now(timezone.utc)
+        summary = {**daily_counts(messages, moment, tz), "generated_at": moment.isoformat(), "mode": "read_only", "total_messages": len(messages),
                    "categories": counts, "open_tasks": sum(t["state"] == "open" for t in tasks.values()),
                    "resolution_count": len(resolutions),
                    "observation_groups": len(observations), "expected_reports_enabled": False,
@@ -122,8 +144,8 @@ class Store:
         atomic_json(export / "open-incidents.json", pending)
         atomic_json(export / "observations.json", list(observations.values()))
         atomic_json(export / "summary.json", summary)
-        local_day = datetime.now(ZoneInfo(tz)).date().isoformat()
-        text = render_digest(summary, messages, list(tasks.values()), list(observations.values()), tz, report_config)
+        local_day = summary["report_day"]
+        text = render_digest(summary, messages, list(tasks.values()), list(observations.values()), tz, report_config, moment)
         export.mkdir(parents=True, exist_ok=True)
         temporary = export / "bilan.txt.tmp"
         temporary.write_text(text, encoding="utf-8")

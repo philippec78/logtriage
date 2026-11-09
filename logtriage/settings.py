@@ -7,7 +7,7 @@ from .private import locked, private_dir, read_json, write_private
 
 
 def defaults():
-    return {"window_hours": 24, "max_groups": 20, "poll_seconds": int(os.environ.get("POLL_SECONDS", "300")),
+    return {"max_groups": 20, "poll_seconds": int(os.environ.get("POLL_SECONDS", "300")),
             "recipient": os.environ.get("REPORT_TO", ""), "sender": os.environ.get("SMTP_FROM") or os.environ.get("IMAP_USER", ""),
             "smtp_host": os.environ.get("SMTP_HOST", ""), "smtp_port": int(os.environ.get("SMTP_PORT", "465")),
             "use_imap_credentials": os.environ.get("SMTP_USE_IMAP_CREDENTIALS", "false").lower() == "true",
@@ -26,7 +26,7 @@ def save_settings(directory, update):
     root = private_dir(directory)
     with locked(root / "settings.lock"):
         value = {**load_settings(directory), **update}
-        for name, low, high in (("window_hours", 1, 720), ("max_groups", 1, 100), ("poll_seconds", 30, 86400), ("smtp_port", 1, 65535)):
+        for name, low, high in (("max_groups", 1, 100), ("poll_seconds", 30, 86400), ("smtp_port", 1, 65535)):
             if type(value[name]) is not int or not low <= value[name] <= high:
                 raise ValueError(f"Valeur hors limites : {name}.")
         for name in ("ai_enabled", "ai_review_unknown", "use_imap_credentials"):

@@ -7,9 +7,10 @@ import secrets
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .ai_report import ReportAgent, annotate
-from .digest import render_digest
+from .digest import day_messages, render_digest
 from .openai_http import OpenAIError
 from .private import locked, private_dir, read_json, write_private
 from .report import prepare_report, send_report, smtp_credentials
@@ -52,8 +53,16 @@ class WebReports:
             write_private(self.path, previous)
 
     def state(self):
-        return {"job": dict(self.job), "preview": read_json(self.path),
+        preview = read_json(self.path)
+        if preview and preview.get("report_day") != self.report_day():
+            preview = None
+        return {"job": dict(self.job), "preview": preview,
                 "last_send": read_json(self.directory / "last-report-send.json")}
+
+    @staticmethod
+    def report_day(moment=None):
+        zone = ZoneInfo(os.environ.get("TZ", "Europe/Zurich"))
+        return (moment or datetime.now(timezone.utc)).astimezone(zone).date().isoformat()
 
     def _background(self, action):
         if not self.lock.acquire(blocking=False):
@@ -102,7 +111,8 @@ class WebReports:
             raise ValueError("Attends la première collecte avant de préparer un rapport.")
         # Le rapport est régénéré à partir des exports disponibles, sans lancer de collecte concurrente.
         now = datetime.now(timezone.utc)
-        digest_args = (summary, messages, tasks, observations, os.environ.get("TZ", "Europe/Zurich"), settings, now)
+        tz = os.environ.get("TZ", "Europe/Zurich")
+        digest_args = (summary, messages, tasks, observations, tz, settings, now)
         report = render_digest(*digest_args)
         ai = {"requested": use_ai, "state": "disabled", "message": "", "usage": {}}
         if use_ai:
@@ -114,20 +124,26 @@ class WebReports:
                 profile = self.chatgpt.state()["active"]
                 if settings["ai_review_unknown"]:
                     reviews, coverage = review_unknown(self.chatgpt, settings["ai_model"], messages,
-                                                       settings["window_hours"], now, profile)
+                                                       tz, now, profile)
                     if coverage:
                         report = render_digest(*digest_args, unknown_reviews=reviews) + "\n" + coverage + "\n"
-                notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, messages,
+                today = day_messages(messages, now, tz)
+                today_ids = {m["sha256"] for m in today}
+                open_keys = {(t["scope"], t["key"]) for t in tasks if t["state"] in ("open", "warning")}
+                history = [m for m in messages if m["sha256"] in today_ids
+                           or (m["scope"], m.get("task_key")) in open_keys
+                           or any((m["scope"], e["task_key"]) in open_keys for e in m.get("task_events", []))]
+                notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, history,
                                            settings["ai_instructions"], profile=profile).run()
                 report = annotate(report, notes)
                 ai.update(state="completed", usage=usage)
             except (OpenAIError, ValueError) as exc:
                 ai.update(state="fallback", message=str(exc) if type(exc) is ValueError else error_message(exc))
-        msg = prepare_report(self.directory, settings["recipient"], settings["sender"], report_text=report)
+        msg = prepare_report(self.directory, settings["recipient"], settings["sender"], current_time=now, report_text=report)
         write_private(self.path, {"id": secrets.token_urlsafe(24), "created_at": datetime.now(timezone.utc).isoformat(),
             "recipient": settings["recipient"], "sender": settings["sender"], "subject": str(msg["Subject"]),
             "body": msg.get_content(), "ai": ai, "settings_digest": settings_digest(settings),
-            "resolution_count": summary.get("resolution_count", 0), "delivery": "not_sent"})
+            "report_day": self.report_day(now), "resolution_count": summary.get("resolution_count", 0), "delivery": "not_sent"})
 
     def send(self, identity):
         preview = read_json(self.path, {})
@@ -140,6 +156,8 @@ class WebReports:
         from email.utils import format_datetime, make_msgid
         preview = read_json(self.path, {})
         settings = load_settings(self.directory)
+        if preview.get("report_day") != self.report_day():
+            raise ValueError("Prépare un aperçu pour la journée en cours.")
         summary = read_json(self.directory / "exports/summary.json", {})
         if preview.get("resolution_count", 0) != summary.get("resolution_count", 0):
             raise ValueError("Un incident a été validé depuis cet aperçu. Prépare un nouveau rapport.")

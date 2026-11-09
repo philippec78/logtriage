@@ -13,8 +13,8 @@ class ReportTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.directory = Path(self.tmp.name)
         (self.directory / "exports").mkdir()
-        self.time = datetime.now(timezone.utc)
-        (self.directory / "exports/summary.json").write_text(json.dumps({"total_messages": 42, "generated_at": self.time.isoformat()}))
+        self.time = datetime.now(timezone.utc).replace(hour=10)
+        (self.directory / "exports/summary.json").write_text(json.dumps({"total_messages": 42, "generated_at": self.time.isoformat(), "report_day": self.time.date().isoformat()}))
         (self.directory / "status.json").write_text(json.dumps({"state": "ok", "last_cycle_at": self.time.isoformat(), "poll_seconds": 300}))
         (self.directory / "exports/bilan.txt").write_text("Mode : lecture seule, aucun envoi\nÉchec de sauvegarde exemple\n")
 
@@ -35,6 +35,20 @@ class ReportTests(unittest.TestCase):
         msg = prepare_report(self.directory, "r@example.com", "s@example.com", self.time)
         self.assertIn("en erreur ou incomplète", msg.get_content())
         self.assertIn("7 message(s)", msg.get_content())
+
+    def test_previous_export_is_refiltered_before_the_next_collection(self):
+        from logtriage.store import current_bilan
+        export = self.directory / "exports"
+        (export / "summary.json").write_text(json.dumps({"total_messages": 2, "report_day": "2026-11-08",
+                                                          "generated_at": "2026-11-08T22:59:00+00:00"}))
+        (export / "tasks.json").write_text(json.dumps([{"state": "open", "scope": "test", "key": "backup",
+            "last_problem": "2026-11-08T10:00:00+00:00", "summary": "Sauvegarde en échec", "resolved_at": None}]))
+        now = datetime(2026, 11, 8, 23, 1, tzinfo=timezone.utc)
+        summary, body = current_bilan(self.directory, now, "Europe/Zurich", {})
+        self.assertEqual(summary["today_messages"], 0)
+        self.assertIn("Sauvegarde en échec", body)
+        self.assertNotIn("Échec de sauvegarde exemple", body)
+        self.assertIn(body.strip(), prepare_report(self.directory, "r@example.com", "s@example.com", now).get_content())
 
     def test_missing_live_status_prevents_sending_sample_data(self):
         (self.directory / "status.json").unlink()

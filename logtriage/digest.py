@@ -4,7 +4,7 @@ import hashlib
 import itertools
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 
@@ -76,24 +76,36 @@ def local_stamp(date, zone):
     return datetime.fromisoformat(date).astimezone(zone).strftime("%d.%m.%Y à %H:%M")
 
 
+def day_bounds(now, tz):
+    local = now.astimezone(ZoneInfo(tz))
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
+    return midnight.astimezone(timezone.utc).isoformat(), now.astimezone(timezone.utc).isoformat()
+
+
+def day_messages(messages, now, tz):
+    start, end = day_bounds(now, tz)
+    return [m for m in messages if start <= m["date"] <= end]
+
+
 def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", config=None, current_time=None,
                   unknown_reviews=None):
     config = config or {}
     current_time = current_time or datetime.now(timezone.utc)
     zone = ZoneInfo(tz)
-    hours = int(config.get("window_hours", 24))
     maximum = int(config.get("max_groups", 20))
-    cutoff = (current_time - timedelta(hours=hours)).isoformat()
+    cutoff, end = day_bounds(current_time, tz)
     # Anciens exports conservés lors d'une mise à jour, avant la première collecte.
     if any("resolved_at" not in task for task in tasks):
         tasks = list(derive_state(messages)[0].values())
-    recent = [m for m in messages if m["date"] >= cutoff]
+    recent = day_messages(messages, current_time, tz)
     groups, older = {}, []
     for task in tasks:
         if task["state"] not in ("open", "warning"):
             continue
         if not task["last_problem"] or task["last_problem"] < cutoff:
             older.append(task)
+            continue
+        if task["last_problem"] > end:
             continue
         # Les répétitions par dossier d'un même NAS deviennent un seul point lisible.
         identity = task["key"]
@@ -107,8 +119,9 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         group["resources"].add(task["key"])
         group["date"] = max(group["date"], task["last_problem"])
         group["severity"] = min(group["severity"], 0 if task["state"] == "open" else 1)
+    seen_today = collections.Counter((m["scope"], o["key"]) for m in recent for o in m["observations"])
     for o in observations:
-        if o["last_seen"] < cutoff:
+        if not cutoff <= o["last_seen"] <= end:
             continue
         level = o.get("source_level")
         cvss = o.get("source_cvss")
@@ -117,7 +130,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         groups[(o["scope"], o["key"])] = {
             "summary": (o.get("host", "") + " : " if o.get("host") else "") + o["summary"],
             "date": o["last_seen"], "severity": 0 if o.get("urgent") else 1,
-            "occurrences": o["reports_seen"], "resources": set(),
+            "occurrences": seen_today[(o["scope"], o["key"])], "resources": set(),
             "security": True}
     # Un message réellement inconnu reste visible, une fois par modèle et non par email.
     unknown = collections.Counter()
@@ -151,16 +164,16 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                                                     "occurrences": count, "resources": set()}
     ordered = sorted(groups.values(), key=lambda g: (g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
     recovered = sorted((t for t in tasks if t["state"] == "resolved" and t["resolved_at"]
-                        and current_time - timedelta(hours=24) <= datetime.fromisoformat(t["resolved_at"]) <= current_time),
+                        and cutoff <= t["resolved_at"] <= end),
                        key=lambda t: t["resolved_at"], reverse=True)
     def count(n, singular, plural):
         return f"{n} {singular if n == 1 else plural}"
 
     lines = ["Bilan des serveurs — " + current_time.astimezone(zone).strftime("%d.%m.%Y à %H:%M %Z"),
-             f"{hours} h de suivi · " + count(len(recent), "email reçu", "emails reçus"), "",
-             count(len(ordered), "point récent à examiner", "points récents à examiner") + " · "
+             "Depuis minuit · " + count(len(recent), "email reçu", "emails reçus"), "",
+             count(len(ordered), "point du jour à examiner", "points du jour à examiner") + " · "
              + count(len(older), "problème antérieur ouvert", "problèmes antérieurs ouverts") + " · "
-             + count(len(recovered), "résolution en 24 h", "résolutions en 24 h")]
+             + count(len(recovered), "résolution du jour", "résolutions du jour")]
     if ordered:
         lines.extend(["", "À EXAMINER EN PRIORITÉ"])
         hidden = 0
@@ -188,7 +201,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
             when = local_stamp(task["last_problem"], zone) if task["last_problem"] else "date inconnue"
             lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} (dernier signal le {when})")
     if recovered:
-        lines += ["", "RÉTABLIS DANS LES DERNIÈRES 24 H"]
+        lines += ["", "RÉTABLIS AUJOURD’HUI"]
         for task in recovered:
             origin = "Validé manuellement" if task.get("resolved_by") == "manual" else "Confirmé par les logs"
             lines.append(f"- {readable(task.get('summary') or task['key'])} — {origin} le {local_stamp(task['resolved_at'], zone)}")

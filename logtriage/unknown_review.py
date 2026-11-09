@@ -4,7 +4,6 @@ import imaplib
 import json
 import re
 import ssl
-from datetime import timedelta
 from email import policy
 from email.parser import BytesParser
 
@@ -13,6 +12,7 @@ from .ai_report import redact
 from .analyze import HTMLText, clean
 from .collector import mailbox_scope, quoted_mailbox
 from .openai_http import OpenAIError
+from .digest import day_messages
 
 
 MAX_MESSAGES = 100
@@ -136,10 +136,9 @@ def validate(text, batch):
     return results
 
 
-def review_unknown(chatgpt, model, messages, hours, now, profile):
-    cutoff = (now - timedelta(hours=hours)).isoformat()
-    candidates = {m["sha256"]: m for m in messages if m.get("recognized") is False
-                  and m["category"] == "a_verifier" and cutoff <= m["date"] <= now.isoformat()}
+def review_unknown(chatgpt, model, messages, tz, now, profile):
+    candidates = {m["sha256"]: m for m in day_messages(messages, now, tz)
+                  if m.get("recognized") is False and m["category"] == "a_verifier"}
     if not candidates:
         return {}, ""
     selected = sorted(candidates.values(), key=lambda m: m["date"], reverse=True)[:MAX_MESSAGES]

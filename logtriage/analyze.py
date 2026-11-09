@@ -16,6 +16,9 @@ ANALYSIS_VERSION = "0.3.0"
 
 
 def rules_revision(rules):
+    # Compatibilité avec les empreintes des imports antérieurs au bilan par jour civil.
+    if "report" in rules and "window_hours" not in rules["report"]:
+        rules = {**rules, "report": {**rules["report"], "window_hours": 24}}
     return hashlib.sha256((ANALYSIS_VERSION + json.dumps(rules, sort_keys=True)).encode()).hexdigest()
 
 

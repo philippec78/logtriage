@@ -24,6 +24,7 @@ from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
 from .settings import load_settings, save_settings
+from .store import current_bilan
 from .web_reports import WebReports, error_message
 
 LOG = logging.getLogger("logtriage.web")
@@ -146,12 +147,13 @@ class WebApplication:
             return token, csrf
 
     def state(self):
-        import os
-        return {"version": __version__, "settings": load_settings(self.directory),
+        settings = load_settings(self.directory)
+        summary, bilan = current_bilan(self.directory, datetime.now(timezone.utc), os.environ.get("TZ", "Europe/Zurich"), settings)
+        return {"version": __version__, "settings": settings,
                 "status": read_json(self.directory / "status.json"),
-                "summary": read_json(self.directory / "exports/summary.json"),
+                "summary": summary,
                 "incidents": read_json(self.directory / "exports/open-incidents.json", []),
-                "latest_digest": (self.directory / "exports/bilan.txt").read_text(encoding="utf-8") if (self.directory / "exports/bilan.txt").exists() else "",
+                "latest_digest": bilan,
                 "chatgpt": self.chatgpt.state(), "models": self.chatgpt.cached_models(),
                 "report": self.reports.state(), "mailbox": {"host": os.environ.get("IMAP_HOST", ""),
                     "user": os.environ.get("IMAP_USER", ""), "folder": os.environ.get("IMAP_FOLDER", "INBOX")}}

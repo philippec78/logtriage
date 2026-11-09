@@ -1,7 +1,6 @@
 {
   "version": 2,
   "report": {
-    "window_hours": 24,
     "max_groups": 20,
     "disk_warning_percent": 90,
     "memory_warning_percent": 95

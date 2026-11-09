@@ -69,10 +69,10 @@ class UnknownReviewTests(unittest.TestCase):
         chat.transport.response.return_value = {"output": [{"type": "message", "content": [
             {"type": "output_text", "text": self.reply()}]}]}
         inputs = [self.message, {**self.message, "recognized": True, "sha256": "recognized"},
-                  {**self.message, "date": "2025-01-01T00:00:00+00:00", "sha256": "old"}]
+                  {**self.message, "date": "2026-11-08T22:59:59+00:00", "sha256": "old"}]
         with patch("logtriage.unknown_review.read_samples", return_value=[self.sample]) as read, patch(
                 "logtriage.unknown_review.Config.load", return_value=self.config):
-            reviews, coverage = review_unknown(chat, "model", inputs, 24, self.now, "profile")
+            reviews, coverage = review_unknown(chat, "model", inputs, "Europe/Zurich", self.now, "profile")
             read.assert_called_once_with([self.message], self.config)
             report = render_digest({"total_messages": 1}, [self.message], [], [], current_time=self.now, unknown_reviews=reviews)
             self.assertIn("Repéré par l’IA", report)
@@ -81,7 +81,7 @@ class UnknownReviewTests(unittest.TestCase):
             self.assertIn("1/1", coverage)
             self.assertNotIn("tools", chat.transport.response.call_args.args[1])
             chat.transport.response.side_effect = OpenAIError("usage_limit")
-            reviews, coverage = review_unknown(chat, "model", inputs, 24, self.now, "profile")
+            reviews, coverage = review_unknown(chat, "model", inputs, "Europe/Zurich", self.now, "profile")
             self.assertEqual(reviews, {})
             self.assertIn("1 à vérifier", coverage)
             report = render_digest({"total_messages": 1}, [self.message], [], [], current_time=self.now, unknown_reviews=reviews)

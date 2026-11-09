@@ -31,7 +31,7 @@ function showReport(container, body) {
   if (container.dataset.rendered === body) return;
   container.dataset.rendered = body;
   const fragment = document.createDocumentFragment();
-  const headings = ['À EXAMINER EN PRIORITÉ', 'PROBLÈMES TOUJOURS OUVERTS', 'RÉTABLIS DANS LES DERNIÈRES 24 H'];
+  const headings = ['À EXAMINER EN PRIORITÉ', 'PROBLÈMES TOUJOURS OUVERTS', 'RÉTABLIS AUJOURD’HUI'];
   for (const raw of body.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
@@ -92,8 +92,8 @@ function render(state) {
   const collection=state.status?.collection, status=state.status?.state;
   const stale=state.status && Date.now()-Date.parse(state.status.last_cycle_at)>Math.max(900,state.status.poll_seconds*3)*1000;
   $('collection-status').textContent=!state.status ? 'La première collecte n’est pas encore disponible.' : stale ? 'La dernière collecte est ancienne. Vérifie le service avant de te fier au bilan.' : status !== 'ok' ? 'Collecte à vérifier : le bilan reflète les données disponibles.' : collection?.pending ? `Collecte en cours : ${collection.pending} emails restent à analyser.` : 'Collecte à jour · boîte consultée en lecture seule';
-  $('message-count').textContent=state.summary?.total_messages?.toLocaleString('fr-CH') ?? '—';
-  $('unknown-count').textContent=state.summary?.unrecognized_messages ?? '—'; $('last-collection').textContent=date(state.status?.last_cycle_at);
+  $('message-count').textContent=state.summary?.today_messages?.toLocaleString('fr-CH') ?? '—';
+  $('unknown-count').textContent=state.summary?.today_unknown ?? '—'; $('last-collection').textContent=date(state.status?.last_cycle_at);
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
   renderIncidents(state.incidents || []);
   settings(state);

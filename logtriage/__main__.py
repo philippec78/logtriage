@@ -87,7 +87,7 @@ def health(directory):
 def run_cycle(config, store, rules):
     from .settings import load_settings
     options = load_settings(store.directory)
-    report_config = {**rules.get("report", {}), "window_hours": options["window_hours"], "max_groups": options["max_groups"]}
+    report_config = {**rules.get("report", {}), "max_groups": options["max_groups"]}
     status = {"last_cycle_at": now(), "poll_seconds": config.interval,
               "mode": "read_only", "state": "error"}
     try:
