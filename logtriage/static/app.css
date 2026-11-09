@@ -73,14 +73,14 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .issue-line>.inspect {margin-top:4px}
 #incident-list label {display:grid;grid-template-columns:18px 7.5rem minmax(0,1fr);align-items:baseline;gap:7px}
 .issues-body {margin-top:8px}
-#incident-list {display:grid;gap:18px}
-.incident-group {border:1px solid var(--line);border-radius:4px;background:var(--surface)}
-.incident-group-heading {display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 14px;background:var(--strip);border-bottom:1px solid var(--line);border-inline-start:4px solid var(--primary)}
-.incident-group-heading h3 {font-size:1.05rem;margin:0;overflow-wrap:anywhere}
-.incident-group-heading span {font-size:.82rem;color:var(--muted);white-space:nowrap}
-.incident-group.unassigned {border-style:dashed;border-color:var(--other)}
-.incident-group.unassigned .incident-group-heading {border-inline-start-color:var(--other)}
-.incident-group ul {list-style:none;margin:0;padding:0 14px}
+#incident-list,#check-groups {display:grid;gap:18px}
+.client-section {border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.client-section-heading {display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 14px;background:var(--strip);border-bottom:1px solid var(--line);border-inline-start:4px solid var(--primary)}
+.client-section-heading h3 {font-size:1.05rem;margin:0;overflow-wrap:anywhere}
+.client-section-heading span {font-size:.82rem;color:var(--muted);white-space:nowrap}
+.client-section.unassigned {border-style:dashed;border-color:var(--other)}
+.client-section.unassigned .client-section-heading {border-inline-start-color:var(--other)}
+#incident-list .client-section ul {list-style:none;margin:0;padding:0 14px}
 #incident-list .issue-context {display:block;margin-top:2px;font-size:.79rem}
 #incident-list label {padding:8px 0;font-size:.84rem}
 #incident-list li + li {border-top:1px solid var(--line)}
@@ -97,14 +97,13 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .check-filters label {margin:0}
 .check-filters input,.check-filters select {min-height:30px;padding:2px 8px;font-size:.82rem}
 .check-filters a {font-size:.82rem;white-space:nowrap}
-#check-groups {padding:6px 12px 12px}
+.check-select-all {display:flex;align-items:center;gap:8px;margin:8px 0;font-size:.85rem}
 .check-table {width:100%;border-collapse:collapse;table-layout:fixed;text-align:left;font-size:.86rem}
 .check-table th,.check-table td {padding:3px 6px;overflow-wrap:anywhere}
 .check-table thead th {font-size:.78rem;color:var(--muted);border-bottom:1px solid var(--line);font-weight:600}
 .check-table thead th:first-child {width:34%}
 .check-table thead th:nth-child(2) {width:24%}
 .check-table thead th:last-child {width:3.4rem;text-align:right}
-.check-table .family-title {text-transform:uppercase;letter-spacing:.04em;font-weight:600;font-size:.85rem;color:var(--text);padding-top:13px;text-align:left}
 .check-table td:first-child>.signal {margin-right:6px}
 .check-name {color:var(--primary)}
 .check-host {margin-left:6px;color:var(--muted);font-size:.8rem}
@@ -119,7 +118,7 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #day-source {border-top:1px solid var(--line)}
 #day-reason {margin-bottom:16px}
 #detail-days .day-button {padding:2px 6px;text-align:left}
-.check-table tr:has(td):hover {background:var(--surface)}
+.check-table tr:has(td):hover {background:var(--strip)}
 .inspect {position:relative;width:28px;min-height:26px;padding:0;border:0;background:transparent;color:var(--primary);vertical-align:middle}
 .inspect::before {content:"";position:absolute;top:6px;left:7px;width:8px;height:8px;border:1.7px solid currentColor;border-radius:50%}
 .inspect::after {content:"";position:absolute;top:16px;left:16px;width:7px;border-top:1.7px solid currentColor;transform:rotate(45deg)}
@@ -159,13 +158,12 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
   .check-table thead th:nth-child(2) {width:22%}
   .check-table thead th:last-child {width:2.3rem}
   .check-table th,.check-table td {padding:4px 2px}
-  #check-groups {padding:4px}
   .check-host {display:block;margin-left:0}
   .check-table tr:has(td) {display:grid;grid-template-columns:1.4fr 1fr 1fr 28px;border-bottom:1px solid var(--line)}
   .check-table tr:has(td) td:nth-child(4) {grid-column:1 / -1;grid-row:2}
   .check-table tr:has(td) td:last-child {grid-column:4;grid-row:1}
   .check-table tbody,.check-table,.check-table thead {display:block}
-  .check-table tr:has(.family-title),.check-table tr:has(.service-title) {display:block}
+  .check-table tr:has(.service-title) {display:block}
   .check-table thead tr {display:grid;grid-template-columns:1.4fr 1fr 1fr 28px}
   .check-table thead tr th:nth-child(n) {width:auto}
   .check-table thead th:nth-child(4) {display:none}
@@ -183,7 +181,6 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .client-toolbar label {margin:0;font-weight:600}
 .client-toolbar select {width:auto;max-width:78%;font-size:.9rem;min-height:34px;padding:4px 10px}
 .check-filters {flex-wrap:wrap}
-.check-table .client-domain {text-transform:none;letter-spacing:0}
 
 #incident-list .incident-note {margin:2px 0 7px 25px;font-size:.82rem;line-height:1.4;overflow-wrap:anywhere}
 .incident-note summary {color:var(--primary);cursor:pointer}

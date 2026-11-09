@@ -48,7 +48,7 @@
           <dl class="summary"><div><dt>Emails du jour</dt><dd id="message-count">—</dd></div><div><dt>Formats inconnus</dt><dd id="unknown-count">—</dd></div><div><dt>Dernière collecte</dt><dd id="last-collection">—</dd></div></dl>
         </div>
       </section>
-      <section class="checks-panel" aria-labelledby="checks-title">
+      <section class="checks-panel" id="checks-panel" aria-labelledby="checks-title">
         <div class="checks-head"><h2 id="checks-title">Mes contrôles</h2>
           <div class="check-filters"><label><span class="sr-only">État</span><select id="check-status"><option value="">Tous les états</option>
           <option value="good">Sans incident</option><option value="resolved">Incidents résolus</option><option value="warn">Avertissement</option>
@@ -62,7 +62,8 @@
           <a id="bulk-create" href="#reglages" hidden>Créer un client</a>
         </form>
         <p id="bulk-status" role="status"></p>
-        <div id="check-groups" class="dash-surface"></div>
+        <label class="check-select-all" hidden><input type="checkbox" id="bulk-all">Cocher tous les contrôles affichés</label>
+        <div id="check-groups"></div>
         <p class="history-key"><span>7 jours · Aujourd’hui à droite</span>
           <span><i class="signal good"></i>Sans incident</span><span><i class="signal warn"></i>Avertissement</span>
           <span><i class="signal bad"></i>Échec</span><span><i class="signal other"></i>À confirmer</span>

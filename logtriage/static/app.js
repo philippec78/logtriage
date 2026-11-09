@@ -128,6 +128,28 @@ function incidentItem(row, selected, expanded) {
   }
   return item;
 }
+function groupedByClient(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const owner = clientGroup(row.client);
+    if (!groups.has(owner)) groups.set(owner, []);
+    groups.get(owner).push(row);
+  }
+  const owners = [...groups.keys()].filter(owner => owner !== '@').sort((a,b) => a.localeCompare(b,'fr'));
+  if (groups.has('@')) owners.push('@');
+  return owners.map(owner => [owner, groups.get(owner)]);
+}
+function clientSection(owner, count, noun, headingId) {
+  const section = element('section','client-section');
+  section.classList.toggle('unassigned',owner === '@');
+  const heading = element('h3','',owner === '@' ? 'Non attribués' : 'Client · '+owner);
+  heading.id = headingId;
+  section.setAttribute('aria-labelledby',headingId);
+  const head = element('div','client-section-heading');
+  head.append(heading, element('span','',count+' '+noun+(count > 1 ? 's' : '')));
+  section.append(head);
+  return section;
+}
 function renderIncidents(rows) {
   const list = $('incident-list');
   const fingerprint = JSON.stringify(rows);
@@ -136,28 +158,11 @@ function renderIncidents(rows) {
     const expanded = new Set(Array.from(list.querySelectorAll('details[open]'), node => node.dataset.signal));
     const focused = list.contains(document.activeElement) ? document.activeElement.value : null;
     const fragment = document.createDocumentFragment();
-    const groups = new Map();
-    for (const row of rows) {
-      const owner = clientGroup(row.client);
-      if (!groups.has(owner)) groups.set(owner, []);
-      groups.get(owner).push(row);
-    }
-    const owners = [...groups.keys()].filter(owner => owner !== '@').sort((a,b) => a.localeCompare(b,'fr'));
-    if (groups.has('@')) owners.push('@');
-    for (const owner of owners) {
-      const incidents = groups.get(owner);
-      const section = element('section','incident-group');
-      const unassigned = owner === '@';
-      section.classList.toggle('unassigned',unassigned);
-      const heading = element('h3','',unassigned ? 'Non attribués' : 'Client · '+owner);
-      heading.id = 'incident-group-'+fragment.childElementCount;
-      section.setAttribute('aria-labelledby',heading.id);
-      const count = incidents.length;
-      const head = element('div','incident-group-heading');
-      head.append(heading, element('span','',count+' incident'+(count > 1 ? 's' : '')));
+    for (const [owner, incidents] of groupedByClient(rows)) {
+      const section = clientSection(owner, incidents.length, 'incident', 'incident-group-'+fragment.childElementCount);
       const entries = element('ul','');
       entries.append(...incidents.map(row => incidentItem(row, selected, expanded)));
-      section.append(head, entries);
+      section.append(entries);
       fragment.append(section);
     }
     list.replaceChildren(fragment);
@@ -563,14 +568,15 @@ function updateBulkBar() {
   for (const box of boxes) box.checked = selectedChecks.has(box.value);
   const all = $('bulk-all');
   if (all) {
+    all.parentElement.hidden = !boxes.length;
     all.disabled = !visible.size;
     all.checked = visible.size > 0 && visibleSelected === visible.size;
     all.indeterminate = visibleSelected > 0 && visibleSelected < visible.size;
   }
 }
-$('check-groups').addEventListener('change', event => {
+$('checks-panel').addEventListener('change', event => {
   const input = event.target;
-  if (!input.matches('input[type=checkbox]')) return;
+  if (!input.matches('#bulk-all, input[data-check]')) return;
   const boxes = input.id === 'bulk-all' ? $('check-groups').querySelectorAll('input[data-check]') : [input];
   for (const box of boxes) {
     if (input.checked) selectedChecks.add(box.value);
@@ -648,46 +654,35 @@ function renderChecks(rows) {
   const signature = JSON.stringify([query,filter,matching]);
   if (list.dataset.rows === signature) { updateBulkBar(); return; }
   list.dataset.rows = signature;
-  const groups = new Map();
-  for (const row of matching) {
-    const section = clientGroup(row.client);
-    if (!groups.has(section)) groups.set(section, []);
-    groups.get(section).push(row);
-  }
-  if (!groups.size) {
+  if (!matching.length) {
     list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle du jour ni incident ouvert dans cette sélection.'));
     updateBulkBar();
     return;
   }
-  const table = element('table','check-table');
-  table.setAttribute('aria-labelledby','checks-title');
-  const headings = table.createTHead().insertRow();
-  for (const title of ['Tâche / source','Type de contrôle','Dernier signal','7 derniers jours','Détails']) {
-    const th = element('th','',title);
-    th.scope = 'col';
-    headings.append(th);
-  }
-  const all = document.createElement('input');
-  all.type = 'checkbox'; all.id = 'bulk-all';
-  all.title = 'Cocher tous les contrôles affichés';
-  all.setAttribute('aria-label',all.title);
-  headings.firstElementChild.prepend(all);
-  for (const domain of [...groups.keys()].sort((a,b)=>a.localeCompare(b,'fr'))) {
-    const body = table.createTBody();
-    body.className = 'check-group';
-    const heading = element('th','family-title client-domain',domain === '@' ? 'Non attribués' : 'Client : '+domain);
-    heading.scope = 'rowgroup';
-    heading.colSpan = 5;
-    body.insertRow().append(heading);
-    let lastService;
-    for (const row of groups.get(domain).sort((a,b) => serviceLabel(a).localeCompare(serviceLabel(b),'fr') ||
+  const fragment = document.createDocumentFragment();
+  for (const [owner, checks] of groupedByClient(matching)) {
+    const section = clientSection(owner, checks.length, 'contrôle', 'check-group-'+fragment.childElementCount);
+    const table = element('table','check-table');
+    table.setAttribute('aria-labelledby',section.getAttribute('aria-labelledby'));
+    const headings = table.createTHead().insertRow();
+    for (const title of ['Tâche / source','Type de contrôle','Dernier signal','7 derniers jours','Détails']) {
+      const th = element('th','',title);
+      th.scope = 'col';
+      headings.append(th);
+    }
+    section.append(table);
+    fragment.append(section);
+    let body;
+    for (const row of checks.sort((a,b) => serviceLabel(a).localeCompare(serviceLabel(b),'fr') ||
       typeLabel(a).localeCompare(typeLabel(b),'fr') || a.name.localeCompare(b.name,'fr'))) {
       const service = serviceLabel(row);
-      if (lastService !== service) {
+      if (!body || body.dataset.service !== service) {
+        body = table.createTBody();
+        body.dataset.service = service;
         const title = element('th','service-title',service);
         title.colSpan = 5;
         body.insertRow().append(title);
-        lastService = service;
+        title.scope = 'rowgroup';
       }
       const tr = body.insertRow(), name = tr.insertCell(), kind = checkKind(row);
       const label = row.state === 'resolved' ? 'Résolu' : row.missing && row.state === 'warning' ? 'En retard' :
@@ -733,7 +728,7 @@ function renderChecks(rows) {
       tr.insertCell().append(inspect);
     }
   }
-  list.replaceChildren(table);
+  list.replaceChildren(fragment);
   updateBulkBar();
 }
 $('check-search').addEventListener('input', () => renderChecks(current?.checks || []));
