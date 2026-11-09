@@ -104,6 +104,30 @@ class FormatsTests(unittest.TestCase):
         msg = parse("ECOSYS model event mail", "<Mon 09 Nov 2026 10:00:00>\n[*] Paper Jam\n<Sun 08 Nov 2026 10:00:00>\n[ ] Paper Jam")
         self.assertEqual(msg["category"], "avertissement")
 
+    def test_remaining_families_from_full_mailbox_audit(self):
+        cases = [
+            ("[nas] A scheduled task was skipped because it is already running", "Task: report\nIt is already running\nFrom NAS", "avertissement"),
+            ("[nas] L'état du cluster haute disponibilité NAS est anormal [Détails : quorum indisponible]", "Des erreurs ont été détectées\nDétails : quorum indisponible\nDe NAS", "echec"),
+            ("Test notification", "Test", "information"),
+            ('UPS-01 – "Standard Plan Expires on Nov 25th, 2026"', "EcoStruxure SmartConnect Notification\nEvent notifications will no longer be sent.", "avertissement"),
+            ("Security Report for account: Nov 1 - Nov 8", "CrowdSec Security Report\n481 ATTACKS PREVENTED", "information"),
+            ("Trying to fence node 'pve01'", "Cluster event", "avertissement"),
+            ("Successfully fenced node 'pve01'", "Cluster event", "avertissement"),
+            ("Rapport de quarantaine example.com", "1 message retenu", "information"),
+            ("[NAS] L'adresse IP [192.0.2.1] a été bloquée par admin via VPN_SERVER", "Notification", "information"),
+            ("[NAS] Le mot de passe de NAS a été modifié", "Notification", "avertissement"),
+            ("[NAS] Le pare-feu a été désactivé", "De NAS", "echec"),
+            ("[NAS] - La tâche Local restore a réussi sur NAS", "De NAS", "reussite_signalee"),
+            ("[NAS] Monthly drive health report on NAS – Healthy", "No problems detected.", "information"),
+            ("[Proxmox quotidien] 09.11.2026 – Points à contrôler", "2 tâche(s) PBS terminée(s) avec un statut différent de OK.\n08.11 | prunejob | backup | WARNINGS: 1 | durée 0:03", "avertissement"),
+            ("[owner/project] Run failed: Docker checks – main (abcdef)", "Repository: owner/project\nWorkflow: Docker checks", "echec"),
+        ]
+        for subject, body, category in cases:
+            with self.subTest(subject=subject):
+                msg = parse(subject, body)
+                self.assertTrue(msg["recognized"])
+                self.assertEqual(msg["category"], category)
+
 
 class DigestTests(unittest.TestCase):
     def test_routine_success_and_resolved_failures_are_not_open_alerts(self):
