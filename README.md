@@ -2,7 +2,33 @@
 
 Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve les résultats dans un volume Docker. Il produit des fichiers JSON et un bilan texte. Il n’a pas d’interface web ni de port à exposer.
 
-## Démarrage
+## Déploiement depuis GitHub dans Portainer
+
+Le fichier `compose.yaml` est prévu pour une stack **Docker Standalone** déployée depuis GitHub dans Portainer. Il construit l’image depuis le dépôt, utilise les règles incluses dans cette image et ne dépend ni d’un `.env`, ni d’un fichier secret, ni d’un dossier de configuration présents sur le serveur.
+
+Dans **Stacks → Add stack → Repository**, configure :
+
+- Repository URL : `https://github.com/philippec78/logtriage`
+- Repository reference : `refs/heads/main`
+- Compose path : `compose.yaml`
+
+Dans **Environment variables**, ajoute les valeurs suivantes :
+
+| Variable | Valeur à renseigner |
+|---|---|
+| `IMAP_HOST` | Nom de ton serveur IMAP, obligatoire |
+| `IMAP_USER` | Identifiant de la boîte, obligatoire |
+| `IMAP_PASSWORD` | Mot de passe de la boîte ou mot de passe d’application, obligatoire |
+| `IMAP_PORT` | `993` par défaut |
+| `IMAP_FOLDER` | `INBOX` par défaut |
+
+Le mot de passe est enregistré dans la configuration de la stack et transmis au conteneur comme variable d’environnement. Il reste consultable par les administrateurs Docker/Portainer ; ne le saisis pas dans le fichier Compose ni dans GitHub. Les variables saisies dans Portainer sont explicitement transmises au service par le fichier Compose.
+
+Clique ensuite sur **Deploy the stack**. Pour une stack Git existante, actualise ses variables puis utilise **Pull and redeploy** pour récupérer le dépôt corrigé. L’image `imap-log-triage:local` est construite depuis le dépôt, pas téléchargée depuis un registre. L’option de rechargement forcé d’une image depuis un registre (**Re-pull image**) n’est pas nécessaire. Le volume `triage-data` et les protections de lecture seule sont conservés.
+
+Le fichier utilise `pull_policy: build` afin de reconstruire le moteur et ses règles lors du déploiement. Sur Docker Swarm, il faut une image préconstruite disponible pour les nœuds ; ce fichier de construction Standalone n’est pas un fichier de déploiement Swarm.
+
+## Démarrage local avec un fichier secret
 
 Prérequis : Docker Engine et Docker Compose v2 sur ton serveur. Depuis le dossier de ce projet :
 
@@ -18,21 +44,25 @@ Crée `secrets/imap_password.txt` contenant uniquement le mot de passe, sans gui
 chmod 700 secrets
 chmod 444 secrets/imap_password.txt
 chmod 600 .env
-docker compose config --quiet
-docker compose up -d --build
-docker compose logs --tail=50 triage
+docker compose -f compose.local.yaml config --quiet
+docker compose -f compose.local.yaml up -d --build
+docker compose -f compose.local.yaml logs --tail=50 triage
 ```
 
 Le processus du conteneur utilise l’utilisateur 10001. Sur l’hôte, le fichier secret est lisible mais son dossier est réservé à ton utilisateur. Pour modifier le secret, rends d’abord le fichier modifiable (`chmod 600 secrets/imap_password.txt`), puis rétablis le mode 444 et recrée le service. Si ta plateforme Docker gère directement des secrets, tu peux remplacer le montage fichier par son mécanisme de secrets.
+
+`compose.local.yaml` déclare le secret à la fois dans le service et au niveau général. Ne commente pas une seule des deux déclarations. Un `IMAP_PASSWORD_FILE` explicitement configuré est prioritaire sur `IMAP_PASSWORD` ; un fichier absent provoque une erreur, sans repli silencieux vers la variable.
 
 La première collecte importe les emails reçus dans les 30 derniers jours, lus ou non lus. Ensuite, les nouveaux messages sont collectés toutes les cinq minutes. L’historique de départ est fixé lors de la première connexion réussie au dossier ; modifier `INITIAL_LOOKBACK_DAYS` après cela ne réinitialise pas cet historique. Les messages plus anciens que ce point de départ restent hors périmètre. Le compte et le dossier configurés sont les seuls consultés. Un sous-dossier n’est pas parcouru automatiquement. Pour un nom de dossier non ASCII, utilise son nom IMAP encodé en modified UTF-7.
 
 ## Consulter et récupérer les résultats
 
+Dans Portainer, ouvre la console du conteneur puis consulte `cat /data/exports/bilan.txt` ou `cat /data/exports/summary.json`. Pour une installation locale avec le fichier secret :
+
 ```sh
-docker compose exec triage cat /data/exports/bilan.txt
-docker compose exec triage cat /data/exports/summary.json
-docker compose cp triage:/data/exports ./exports
+docker compose -f compose.local.yaml exec triage cat /data/exports/bilan.txt
+docker compose -f compose.local.yaml exec triage cat /data/exports/summary.json
+docker compose -f compose.local.yaml cp triage:/data/exports ./exports
 ```
 
 Le dossier `/data/exports` contient :
@@ -60,10 +90,10 @@ Le système de fichiers du conteneur est aussi monté en lecture seule, à l’e
 
 ## Règles incluses
 
-Les réglages sont dans `config/rules.json`, monté en lecture seule. Redémarre le service après une modification :
+Les réglages sont dans `config/rules.json`. Avec Portainer/Git, ils sont inclus dans l’image : modifie le fichier dans le dépôt puis redéploie la stack pour reconstruire l’image. Avec `compose.local.yaml`, le fichier est monté en lecture seule : redémarre le service après une modification :
 
 ```sh
-docker compose restart triage
+docker compose -f compose.local.yaml restart triage
 ```
 
 Une empreinte des règles et de la version du moteur déclenche la réanalyse progressive des messages encore accessibles dans la période de collecte. Les emails supprimés entre-temps ne peuvent pas être réanalysés ; leur ancien résultat reste conservé. Les emails et les observations ne sont pas multipliés par cette réanalyse.
@@ -83,8 +113,8 @@ Les règles sont adaptées aux exemples reçus, pas à tous les formats possible
 ## État du service
 
 ```sh
-docker compose ps
-docker compose exec triage cat /data/status.json
+docker compose -f compose.local.yaml ps
+docker compose -f compose.local.yaml exec triage cat /data/status.json
 ```
 
 Le contrôle de santé vérifie qu’un cycle récent s’est terminé correctement. Les identifiants invalides, erreurs TLS/IMAP et messages qui n’ont pas pu être récupérés apparaissent comme erreurs ou état dégradé. Un email dont le format n’est pas reconnu est tout de même analysé et reste visible dans `a_verifier`. Les messages dépassant `MAX_MESSAGE_BYTES` sont signalés dans `status.json`, sans téléchargement du corps, puis réessayés ; une rotation empêche qu’ils bloquent les messages suivants.
@@ -92,11 +122,11 @@ Le contrôle de santé vérifie qu’un cycle récent s’est terminé correctem
 Pour une seule collecte et l’export correspondant :
 
 ```sh
-docker compose stop triage
-docker compose run --rm triage once
+docker compose -f compose.local.yaml stop triage
+docker compose -f compose.local.yaml run --rm triage once
 ```
 
-Évite de lancer deux collecteurs simultanés sur le même volume. `docker compose down` conserve le volume ; sauvegarde-le si tu veux conserver ton historique. N’ajoute pas `--volumes` à cette commande sauf si tu veux effacer les résultats locaux.
+Évite de lancer deux collecteurs simultanés sur le même volume. `docker compose -f compose.local.yaml down` conserve le volume ; sauvegarde-le si tu veux conserver ton historique. N’ajoute pas `--volumes` à cette commande sauf si tu veux effacer les résultats locaux.
 
 ## Essai hors connexion avec des fichiers .eml
 
@@ -137,3 +167,5 @@ Les tests couvrent le protocole IMAP en lecture seule, les identifiants persista
 - [Client IMAP Python : select readonly et récupération des messages](https://docs.python.org/3/library/imaplib.html)
 - [Extraction de texte PDF avec pypdf](https://pypdf.readthedocs.io/en/stable/user/extract-text.html)
 - [Image Python officielle](https://hub.docker.com/_/python)
+- [Stacks Portainer et variables d’environnement](https://docs.portainer.io/user/docker/stacks/add)
+- [Déclaration des secrets Compose](https://docs.docker.com/reference/compose-file/secrets/)
