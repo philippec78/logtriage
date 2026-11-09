@@ -1,17 +1,38 @@
 """Attribution privée des contrôles à partir d'une fiche du tableau de bord."""
 import re
-from collections import defaultdict
+import unicodedata
 
 from .clients import assignment_source, message_client
 from .monitoring import identity, policy
 from .private import locked, private_dir, read_json, write_private
 
 
+def client_names(directory, create=None):
+    root = private_dir(directory)
+    path = root / "clients.json"
+    with locked(root / "clients.lock"):
+        names = read_json(path)
+        first_use = names is None
+        if first_use:
+            names = sorted({r["client"] for r in policy(directory).get("assignments", [])}, key=str.casefold)
+        if create is not None:
+            if not isinstance(create, str):
+                raise ValueError("Indique le nom du client.")
+            name = unicodedata.normalize("NFC", " ".join(create.split()))
+            if not re.fullmatch(r"[\w][\w .&'’-]{0,79}", name):
+                raise ValueError("Indique un nom ou un domaine valide de 80 caractères maximum.")
+            if any(n.casefold() == name.casefold() for n in names):
+                raise ValueError("Ce client figure déjà dans la liste.")
+            names = sorted([*names, name], key=str.casefold)
+        if first_use or create is not None:
+            write_private(path, names)
+        return names
+
+
 def review_assignment(directory, values, save=False):
     client = values.get("client")
-    if not isinstance(client, str) or not re.fullmatch(r"[\w][\w .&'’-]{0,79}", client.strip()):
-        raise ValueError("Indique le nom ou le domaine du client.")
-    client = client.strip()
+    if client not in client_names(directory):
+        raise ValueError("Choisis un client enregistré dans Réglages → Clients.")
     root = private_dir(directory)
     export = directory / "exports"
     with locked(directory / "export.lock"), locked(root / "monitoring.lock"):

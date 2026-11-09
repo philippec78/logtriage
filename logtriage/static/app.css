@@ -188,3 +188,9 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #assignment-form {margin:10px 0}
 #assignment-review {margin-top:8px}
 #assignment-checks:empty,#assignment-result:empty {display:none}
+
+.create-client-row {display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.create-client-row input {flex:1 1 180px;max-width:28rem}
+#registered-clients {padding-left:1.3rem}
+#client-feedback:empty,#registered-clients:empty {display:none}
+#manage-clients {display:block;margin-top:6px}

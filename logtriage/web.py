@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import __version__
 from .check_types import check_service
-from .assignments import review_assignment
+from .assignments import client_names, review_assignment
 from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
@@ -165,7 +165,7 @@ class WebApplication:
         account = self.chatgpt.state()
         incidents = [row for row in read_json(self.directory / "exports/open-incidents.json", [])
                      if not row.get("missing") or summary.get("monitoring_available")]
-        return {"checks": rows, "monitoring": {"schedules": monitoring["schedules"],
+        return {"clients": client_names(self.directory), "checks": rows, "monitoring": {"schedules": monitoring["schedules"],
                 "suggestions": [r for r in read_json(self.directory / "exports/calendar-suggestions.json", []) if r["id"] not in active],
                 "rules": [{k: v for k, v in r.items() if k != "examples"} for r in monitoring["rules"]],
                 "tasks": [{**t, "service": check_service(t["key"])}
@@ -285,6 +285,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == "/api/settings":
                 save_settings(self.app.directory, values)
                 return self.reply(200, {"ok": True})
+            if path == "/api/clients/create":
+                return self.reply(200, {"clients": client_names(self.app.directory, values.get("name") or "")})
             if path == "/api/assignments/preview":
                 return self.reply(200, review_assignment(self.app.directory, values))
             if path == "/api/rules/test":

@@ -115,6 +115,7 @@ function render(state) {
   $('collection-status').textContent=!state.status ? 'La première collecte n’est pas encore disponible.' : stale ? 'La dernière collecte est ancienne. Vérifie le service avant de te fier au bilan.' : status !== 'ok' ? 'Collecte à vérifier : le bilan reflète les données disponibles.' : collection?.pending ? `Collecte en cours : ${collection.pending} emails restent à analyser.` : 'Collecte à jour · boîte consultée en lecture seule';
   $('last-collection').textContent=date(state.status?.last_cycle_at);
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
+  renderRegistry(state.clients || []);
   renderClientView(state);
   settings(state);
   renderMonitoring(state);
@@ -253,13 +254,24 @@ function renderServices(client, items) {
   for (const item of list.querySelectorAll('button')) item.setAttribute('aria-pressed', String(item.dataset.service === selectedService));
 }
 const typeLabel = row => row.check_type || 'Autre contrôle';
-function updateFilter(id, values, label, allLabel) {
+function updateFilter(id, values, label, allLabel, registered) {
   const picker = $(id);
   const items = [...new Set(values)].sort((a,b) => label(a).localeCompare(label(b),'fr'));
-  const signature = JSON.stringify(items);
+  const signature = JSON.stringify([items,registered]);
   if (picker.dataset.options !== signature) {
     const selected = picker.value;
-    picker.replaceChildren(new Option(allLabel,'*'), ...items.map(v => new Option(label(v),v)));
+    picker.replaceChildren(new Option(allLabel,'*'));
+    if (registered) {
+      for (const [title, groupItems] of [['Clients enregistrés',registered], ['Domaines détectés',items.filter(v => !registered.includes(v))]]) {
+        if (!groupItems.length) continue;
+        const group = document.createElement('optgroup');
+        group.label = title;
+        group.append(...groupItems.map(v => new Option(label(v),v)));
+        picker.append(group);
+      }
+    } else {
+      picker.append(...items.map(v => new Option(label(v),v)));
+    }
     picker.value = items.includes(selected) ? selected : '*';
     picker.dataset.options = signature;
   }
@@ -269,8 +281,8 @@ function renderClientView(state) {
   const counts = state.summary?.clients_today || {};
   const rows = state.checks || [], issues = state.incidents || [];
   const catalog = [...rows, ...issues, ...(state.monitoring?.tasks || [])];
-  const client = updateFilter('client-filter', [...Object.keys(counts), ...catalog.map(r => r.client || '')],
-    clientLabel, 'Tous les clients');
+  const client = updateFilter('client-filter', [...(state.clients || []), ...Object.keys(counts), ...catalog.map(r => r.client || '')],
+    clientLabel, 'Tous les clients', state.clients || []);
   renderServices(client, catalog);
   const owns = row => client === '*' || (row.client || '') === client;
   const types = [...rows, ...issues].filter(r => owns(r) && (selectedService === '*' || selectedService === serviceLabel(r))).map(typeLabel);
@@ -290,6 +302,35 @@ $('client-filter').addEventListener('change', () => {
 });
 $('type-filter').addEventListener('change', () => renderClientView(current));
 let detailRequest = 0;
+function renderRegistry(names) {
+  const list = $('registered-clients'), select = $('assignment-client');
+  if (list.dataset.names === JSON.stringify(names)) return;
+  list.dataset.names = JSON.stringify(names);
+  list.replaceChildren(...names.map(name => element('li','',name)));
+  $('no-clients').hidden = names.length > 0;
+  const selected = select.value;
+  select.replaceChildren(new Option(names.length ? 'Choisis un client' : 'Ajoute un client dans les réglages',''),
+    ...names.map(name => new Option(name,name)));
+  select.value = names.includes(selected) ? selected : '';
+  $('assignment-review').disabled = names.length === 0;
+}
+$('create-client-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = event.submitter;
+  submit.disabled = true;
+  try {
+    const result = await api('/api/clients/create', {name:$('new-client-name').value});
+    renderRegistry(result.clients);
+    $('new-client-name').value = '';
+    $('client-feedback').textContent = 'Client ajouté.';
+    await refresh(true);
+  } catch (error) { $('client-feedback').textContent = error.message; }
+  finally { submit.disabled = false; }
+});
+$('manage-clients').addEventListener('click', () => {
+  $('check-detail').close();
+  requestAnimationFrame(() => $('new-client-name').focus());
+});
 let assignmentId = '', assignmentToken = '';
 function clearAssignment() {
   assignmentToken = '';
@@ -340,8 +381,7 @@ async function showMailDetail(id) {
     if (detail.kind !== 'mail') return;
     if (detail.assignment_source) {
       $('assign-client').hidden = false;
-      const clients = Array.from($('client-filter').options).map(o => o.value).filter(v => v && v !== '*');
-      $('client-names').replaceChildren(...clients.map(name => new Option(name,name)));
+
     }
     const meta = element('p','mail-meta','Mail du '+date(detail.date)+' · '+(executionLabels[detail.execution] || 'À confirmer'));
     box.append(meta);

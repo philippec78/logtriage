@@ -75,6 +75,15 @@
     </section>
     <section id="view-reglages" class="view" hidden aria-labelledby="reglages-title">
       <div class="page-heading"><div><h1 id="reglages-title">Réglages</h1><p>Les modifications sont conservées après le redémarrage du conteneur.</p></div></div>
+      <section class="panel" aria-labelledby="clients-title">
+        <h2 id="clients-title">Clients</h2>
+        <ul id="registered-clients"></ul><p id="no-clients">Aucun client enregistré.</p>
+        <form id="create-client-form"><label for="new-client-name">Nom ou domaine du client</label>
+          <div class="create-client-row"><input id="new-client-name" maxlength="80" required>
+            <button type="submit">Ajouter le client</button></div>
+          <p id="client-feedback" role="status"></p>
+        </form>
+      </section>
       <section class="panel" aria-labelledby="proposals-title">
         <h2 id="proposals-title">Calendriers proposés</h2>
         <p class="hint">Jours habituels de réception et heure limite suisse, avec 30 minutes de marge. Coche les tâches que tu veux surveiller.</p>
@@ -146,7 +155,8 @@
   <h2 id="detail-title"></h2><p id="detail-context"></p><section aria-labelledby="detail-mail-title"><h3 id="detail-mail-title">Résumé du mail</h3><div id="detail-mail" role="status"></div></section>
   <details id="assign-client" hidden><summary>Attribuer à un client</summary>
     <form id="assignment-form"><label for="assignment-client">Client destinataire</label>
-      <input id="assignment-client" list="client-names" maxlength="80" required><datalist id="client-names"></datalist>
+      <select id="assignment-client" required><option value="">Choisis un client</option></select>
+      <a id="manage-clients" href="#reglages">Gérer la liste des clients</a>
       <button type="submit" id="assignment-review">Voir les contrôles concernés</button>
       <p id="assignment-result" role="status"></p><ul id="assignment-checks"></ul>
       <button type="button" id="assignment-save" hidden>Appliquer l’attribution</button>

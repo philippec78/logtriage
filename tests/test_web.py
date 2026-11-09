@@ -92,6 +92,19 @@ class WebTests(unittest.TestCase):
         self.assertIn("planificateur", mail["subject"])
         self.assertEqual(self.request("/api/check-detail/absent")[0], 404)
 
+    def test_client_directory_migrates_assignments_and_keeps_clients_without_checks(self):
+        from logtriage.private import write_private
+        write_private(self.directory / "private/monitoring.json",
+                      {"schedules": [], "rules": [], "assignments": [{"client": "Alpha", "source": []}]})
+        self.assertEqual(self.request("/api/clients/create", {"name":"Beta"})[0], 401)
+        self.login()
+        self.assertEqual(self.request("/api/state")[1]["clients"], ["Alpha"])
+        self.assertEqual(self.request("/api/clients/create", {"name":" Beta "})[1]["clients"], ["Alpha", "Beta"])
+        self.assertEqual(self.request("/api/clients/create", {"name":"bEtA"})[0], 400)
+        self.assertEqual(self.request("/api/clients/create", {"name":"  "})[0], 400)
+        self.assertEqual(self.request("/api/assignments/preview", {"client":"Inconnu"})[0], 400)
+        self.assertEqual(read_json(self.directory / "private/clients.json"), ["Alpha","Beta"])
+
     def test_private_data_requires_login_and_cookie_is_protected(self):
         self.assertEqual(self.request("/api/state")[0], 401)
         headers = self.login()
