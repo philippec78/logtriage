@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 64,
-    "passed": 64,
+    "executed": 65,
+    "passed": 65,
     "real_imap_connection": false
   },
   "sample": {

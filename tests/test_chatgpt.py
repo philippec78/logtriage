@@ -164,6 +164,34 @@ class StreamTests(unittest.TestCase):
 
 
 class AgentTests(unittest.TestCase):
+    def test_final_synthesis_after_tool_budget_or_last_read_turn(self):
+        from unittest.mock import Mock
+        for sizes in ([13], [1, 1, 1]):
+            with self.subTest(sizes=sizes):
+                client = Mock()
+                report = "- ÉCHEC — Sauvegarde interrompue."
+                agent = ReportAgent(client, "test", report, [], profile="test")
+                agent.tool = Mock(return_value={})
+                payloads = []
+                def respond(token, payload):
+                    turn = len(payloads)
+                    payloads.append(json.loads(json.dumps(payload)))
+                    if turn < len(sizes):
+                        return {"output": [{"type": "function_call", "name": "get_report", "arguments": "{}",
+                                            "call_id": f"call-{turn}-{i}"} for i in range(sizes[turn])]}
+                    return {"output": [{"type": "message", "phase": "commentary",
+                                        "content": [{"type": "output_text", "text": "Je prépare le bilan."}]},
+                                       {"type": "message", "phase": "final_answer",
+                                        "content": [{"type": "output_text", "text": '{"notes":[]}'}]}]}
+                client.transport.response.side_effect = respond
+                notes, stats = agent.run()
+                self.assertEqual(notes, {})
+                self.assertNotIn("tools", payloads[-1])
+                self.assertEqual(agent.tool.call_count, min(10, sum(sizes)))
+                self.assertEqual(stats["turns"], len(sizes) + 1)
+                replies = [item for item in payloads[-1]["input"] if item.get("type") == "function_call_output"]
+                self.assertEqual(len({item["call_id"] for item in replies}), sum(sizes))
+
     def test_invented_alert_id_or_changed_shape_is_rejected(self):
         facts = facts_from_report("- ÉCHEC — Backup failed.\n")
         with self.assertRaises(OpenAIError):

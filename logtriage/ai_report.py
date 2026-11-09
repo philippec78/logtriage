@@ -24,6 +24,7 @@ def facts_from_report(report):
 
 
 def validate_notes(text, facts):
+    text = text.strip()
     if text.startswith("```json") and text.rstrip().endswith("```"):
         text = text[7:].rstrip()[:-3]
     try:
@@ -117,23 +118,31 @@ class ReportAgent:
                     "facts": self.ai_facts, "editorial_preferences": redact(self.instructions)}, ensure_ascii=False)}]
         calls = 0
         for turn in range(4):
+            final_turn = calls >= 10 or turn == 3
             if len(json.dumps(history)) > 200000:
-                raise OpenAIError("context_limit")
-            response = self.chatgpt.transport.response(self.chatgpt.access_token(self.profile), {
+                # Les faits du bilan suffisent pour terminer si les lectures sont trop volumineuses.
+                history = history[:1]
+                if len(json.dumps(history)) > 200000:
+                    raise OpenAIError("context_limit")
+                final_turn = True
+            payload = {
                 "model": self.model, "instructions": instructions, "input": history,
-                "store": False, "stream": True,
-                "tools": [{"type": "namespace", "name": "logtriage", "description": "Lecture seule des faits et de l’historique.", "tools": functions}]})
+                "store": False, "stream": True}
+            if final_turn:
+                payload["instructions"] += " Les consultations sont terminées. Rédige maintenant le JSON final avec les faits disponibles."
+            else:
+                payload["tools"] = [{"type": "namespace", "name": "logtriage", "description": "Lecture seule des faits et de l’historique.", "tools": functions}]
+            response = self.chatgpt.transport.response(self.chatgpt.access_token(self.profile), payload)
             output = response.get("output", [])
             tool_calls = [item for item in output if item.get("type") == "function_call"]
             if not tool_calls:
-                text = "".join(part.get("text", "") for item in output if item.get("type") == "message"
+                text = "".join(part.get("text", "") for item in output if item.get("type") == "message" and item.get("phase") != "commentary"
                                for part in item.get("content", []) if part.get("type") == "output_text")
                 return validate_notes(text, self.facts), {"turns": turn + 1, "tool_calls": calls}
+            if final_turn:
+                raise OpenAIError("turn_limit")
             history.extend(output)
             for item in tool_calls:
-                calls += 1
-                if calls > 10:
-                    raise OpenAIError("tool_limit")
                 name = item.get("name", "")
                 if name.startswith("logtriage."):
                     name = name.split(".", 1)[1]
@@ -143,7 +152,11 @@ class ReportAgent:
                     arguments = json.loads(item["arguments"])
                     if not isinstance(arguments, dict):
                         raise ValueError()
-                    result = self.tool(name, arguments)
+                    if calls < 10:
+                        calls += 1
+                        result = self.tool(name, arguments)
+                    else:
+                        result = {"error": "Budget de lecture atteint. Utilise les faits déjà disponibles."}
                 except (ValueError, KeyError, TypeError):
                     result = {"error": "Arguments non valides."}
                 history.append({"type": "function_call_output", "call_id": item["call_id"],

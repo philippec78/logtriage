@@ -19,7 +19,13 @@ ERRORS = {"usage_limit": "La limite d’utilisation ChatGPT est atteinte. Gère 
           "login_required": "Reconnecte ton compte ChatGPT pour utiliser l’IA.",
           "plan_permission_missing": "L’autorisation d’utiliser ton abonnement ChatGPT n’a pas été accordée.",
           "identity_not_verified": "L’identité du compte ChatGPT n’a pas pu être vérifiée.",
-          "account_changed": "Le compte ChatGPT a changé. Prépare à nouveau le rapport."}
+          "account_changed": "Le compte ChatGPT a changé. Prépare à nouveau le rapport.",
+          "turn_limit": "ChatGPT a demandé une autre consultation quand Logtriage attendait la synthèse finale.",
+          "context_limit": "Le nombre de faits dépasse la capacité de cette analyse.",
+          "invalid_analysis": "Les notes de ChatGPT sont mal formées ou ne correspondent pas aux alertes du bilan.",
+          "interrupted_stream": "La connexion à ChatGPT a été interrompue avant la fin de la réponse.",
+          "incomplete_response": "ChatGPT a signalé que sa réponse était incomplète.",
+          "response_limit": "La réponse de ChatGPT a dépassé la durée ou la taille maximale."}
 
 
 def error_message(error):
