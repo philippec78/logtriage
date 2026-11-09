@@ -53,14 +53,14 @@ def annotate(report, notes):
 
 
 class ReportAgent:
-    def __init__(self, chatgpt, model, report, messages, instructions=""):
+    def __init__(self, chatgpt, model, report, messages, instructions="", profile=None):
         self.chatgpt, self.model, self.report = chatgpt, model, report
         self.facts = facts_from_report(report)
         self.ai_facts = {key: redact(line) for key, line in self.facts.items()}
         cutoff = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
         self.messages = {m["sha256"]: m for m in messages if m["date"] >= cutoff}
         self.instructions = instructions
-        self.profile = chatgpt.state()["active"]
+        self.profile = profile or chatgpt.state()["active"]
 
     def event(self, message, details=False):
         value = {k: message.get(k) for k in ("sha256", "date", "category", "summary", "execution", "task_key")}

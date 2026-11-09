@@ -13,6 +13,7 @@ from .private import private_dir, read_json, write_private
 from .report import prepare_report, send_report, smtp_credentials
 from .settings import load_settings
 from .store import atomic_json
+from .unknown_review import review_unknown
 
 ERRORS = {"usage_limit": "La limite d’utilisation ChatGPT est atteinte. Gère ton utilisation dans ChatGPT ou utilise le bilan classique.",
           "login_required": "Reconnecte ton compte ChatGPT pour utiliser l’IA.",
@@ -77,7 +78,9 @@ class WebReports:
             raise ValueError("Attends la première collecte avant de préparer un rapport.")
         # Le rapport est régénéré à partir des exports disponibles, sans lancer de collecte concurrente.
         import os
-        report = render_digest(summary, messages, tasks, observations, os.environ.get("TZ", "Europe/Zurich"), settings)
+        now = datetime.now(timezone.utc)
+        digest_args = (summary, messages, tasks, observations, os.environ.get("TZ", "Europe/Zurich"), settings, now)
+        report = render_digest(*digest_args)
         ai = {"requested": use_ai, "state": "disabled", "message": "", "usage": {}}
         if use_ai:
             try:
@@ -85,7 +88,14 @@ class WebReports:
                     raise ValueError("Active l’IA dans les réglages pour utiliser ton abonnement ChatGPT.")
                 if settings["ai_model"] not in {m["slug"] for m in self.chatgpt.cached_models()}:
                     raise ValueError("Actualise les modèles et sélectionne un modèle disponible dans les réglages.")
-                notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, messages, settings["ai_instructions"]).run()
+                profile = self.chatgpt.state()["active"]
+                if settings["ai_review_unknown"]:
+                    reviews, coverage = review_unknown(self.chatgpt, settings["ai_model"], messages,
+                                                       settings["window_hours"], now, profile)
+                    if coverage:
+                        report = render_digest(*digest_args, unknown_reviews=reviews) + "\n" + coverage + "\n"
+                notes, usage = ReportAgent(self.chatgpt, settings["ai_model"], report, messages,
+                                           settings["ai_instructions"], profile=profile).run()
                 report = annotate(report, notes)
                 ai.update(state="completed", usage=usage)
             except (OpenAIError, ValueError) as exc:

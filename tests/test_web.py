@@ -116,6 +116,21 @@ class WebTests(unittest.TestCase):
         self.assertEqual(preview["ai"]["state"], "fallback")
         self.assertEqual(preview["delivery"], "not_sent")
 
+    def test_unknown_review_requires_both_saved_opt_in_and_ai_preview(self):
+        self.fixture()
+        self.assertFalse(load_settings(self.directory)["ai_review_unknown"])
+        save_settings(self.directory, {"ai_enabled": True, "ai_model": "test"})
+        with patch.object(self.app.chatgpt, "cached_models", return_value=[{"slug": "test"}]), patch(
+                "logtriage.web_reports.ReportAgent.run", return_value=({}, {})), patch(
+                "logtriage.web_reports.review_unknown", return_value=({}, "Couverture des formats inconnus")) as review:
+            self.app.reports._preview(True)
+            save_settings(self.directory, {"ai_review_unknown": True})
+            self.app.reports._preview(False)
+            review.assert_not_called()
+            self.app.reports._preview(True)
+            review.assert_called_once()
+            self.assertIn("Couverture des formats inconnus", self.app.reports.state()["preview"]["body"])
+
     def test_send_uses_reviewed_preview_once_and_rejects_changed_settings(self):
         self.fixture()
         self.login()

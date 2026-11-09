@@ -59,7 +59,8 @@ def local_stamp(date, zone):
     return datetime.fromisoformat(date).astimezone(zone).strftime("%d.%m.%Y à %H:%M")
 
 
-def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", config=None, current_time=None):
+def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", config=None, current_time=None,
+                  unknown_reviews=None):
     config = config or {}
     current_time = current_time or datetime.now(timezone.utc)
     zone = ZoneInfo(tz)
@@ -106,6 +107,18 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
     example = {}
     for m in recent:
         if m["category"] == "a_verifier":
+            review = (unknown_reviews or {}).get(m["sha256"]) if m.get("recognized") is False else None
+            if review and review["verdict"] == "routine":
+                continue
+            if review and review["verdict"] == "signal":
+                for finding in review["findings"]:
+                    identity = ("ai", m["scope"], review["subject"], finding["summary"], finding["quote"])
+                    group = groups.setdefault(identity, {
+                        "summary": finding["summary"], "date": m["date"], "severity": 1,
+                        "occurrences": 0, "resources": set(), "ai_source": review["subject"], "quote": finding["quote"]})
+                    group["occurrences"] += 1
+                    group["date"] = max(group["date"], m["date"])
+                continue
             model = re.sub(r"\d+", "#", m["subject"])
             unknown[model] += 1
             example[model] = m
@@ -125,7 +138,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
     if ordered:
         hidden = 0
         for index, group in enumerate(ordered):
-            if index >= maximum and not group["resources"]:
+            if index >= maximum and not group["resources"] and "ai_source" not in group:
                 hidden += 1
                 continue
             label = "ÉCHEC" if group["severity"] == 0 else "À VÉRIFIER" if group["severity"] == 2 else "ATTENTION"
@@ -135,6 +148,8 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 line += f" ({len(group['resources'])} ressources concernées) — {names}"
             when = datetime.fromisoformat(group["date"]).astimezone(zone).strftime("%d.%m à %H:%M")
             lines += [line, f"  Dernier signal : {when} ; {group['occurrences']} rapport(s) regroupé(s)."]
+            if "ai_source" in group:
+                lines.append(f"  Repéré par l’IA dans « {group['ai_source']} » — extrait : « {group['quote']} ».")
         if hidden:
             lines.append(f"{hidden} autre(s) point(s) : détail conservé dans les exports locaux.")
     else:

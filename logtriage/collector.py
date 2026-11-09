@@ -24,9 +24,13 @@ def quoted_mailbox(mailbox):
     return '"' + mailbox.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
 
-def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
-    scope = "imap:" + hashlib.sha256(
+def mailbox_scope(config):
+    return "imap:" + hashlib.sha256(
         f"{config.host.lower()}:{config.port}|{config.user}|{config.folder}".encode()).hexdigest()[:24]
+
+
+def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
+    scope = mailbox_scope(config)
     stats = {"new": 0, "duplicate": 0, "pending": 0, "skipped": [], "failures": []}
     # Cette fonction ne possède aucune voie d’écriture IMAP : ni SELECT en écriture,
     # ni STORE/COPY/MOVE/EXPUNGE. EXAMINE et BODY.PEEK[] sont imposés dans le code.

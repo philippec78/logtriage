@@ -60,6 +60,8 @@
           <p><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Gérer l’utilisation et l’accès dans ChatGPT</a></p>
           <div class="fields"><div><label for="ai_model">Modèle de ton compte</label><select id="ai_model" name="ai_model"><option value="">Sélectionne un modèle</option></select><button id="load-models" type="button" class="model-refresh">Actualiser les modèles</button></div>
           <div><label class="checkbox"><input id="ai_enabled" name="ai_enabled" type="checkbox"> Autoriser l’analyse avec mon abonnement ChatGPT</label><p class="hint">L’analyse démarre uniquement quand tu prépares un rapport avec ChatGPT.</p></div></div>
+          <label class="checkbox"><input id="ai_review_unknown" name="ai_review_unknown" type="checkbox" aria-describedby="unknown-help"> Analyser les emails non reconnus</label>
+          <p class="hint" id="unknown-help">Quand tu prépares un rapport avec ChatGPT, Logtriage transmet à OpenAI l’objet et un extrait du texte de ces emails. Les pièces jointes sont exclues.</p>
           <label for="ai_instructions">Préférences de rédaction — facultatif</label><textarea id="ai_instructions" name="ai_instructions" rows="3" maxlength="1500" placeholder="Exemple : donner la priorité aux sauvegardes et proposer une vérification courte par incident."></textarea>
         </fieldset>
         <div class="form-actions"><button id="save-settings" class="primary" type="submit">Enregistrer les réglages</button><p id="settings-status" role="status" aria-live="polite"></p></div>
