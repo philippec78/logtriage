@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from .ai_report import ReportAgent, annotate
 from .digest import day_messages, render_digest
 from .openai_http import OpenAIError
+from .monitoring import policy, reliable, identity as policy_hash
 from .private import locked, private_dir, read_json, write_private
 from .report import prepare_report, send_report, smtp_credentials
 from .settings import load_settings
@@ -112,6 +113,10 @@ class WebReports:
         # Le rapport est régénéré à partir des exports disponibles, sans lancer de collecte concurrente.
         now = datetime.now(timezone.utc)
         tz = os.environ.get("TZ", "Europe/Zurich")
+        policy_id = summary.get("policy_id", policy_hash(policy(self.directory)))
+        if summary.get("expected_reports_enabled") and not reliable(read_json(self.directory / "status.json", {}), now):
+            summary["monitoring_available"] = False
+        suggestions = []
         digest_args = (summary, messages, tasks, observations, tz, settings, now)
         report = render_digest(*digest_args)
         ai = {"requested": use_ai, "state": "disabled", "message": "", "usage": {}}
@@ -125,6 +130,10 @@ class WebReports:
                 if settings["ai_review_unknown"]:
                     reviews, coverage = review_unknown(self.chatgpt, settings["ai_model"], messages,
                                                        tz, now, profile)
+                    by_hash = {m["sha256"]: m for m in messages}
+                    suggestions = [{"id": key, "scope": by_hash[key]["scope"], "subject": by_hash[key]["subject"],
+                                    "quote": review["findings"][0]["quote"]} for key, review in reviews.items()
+                                   if review["verdict"] == "signal"]
                     if coverage:
                         report = render_digest(*digest_args, unknown_reviews=reviews) + "\n" + coverage + "\n"
                 today = day_messages(messages, now, tz)
@@ -142,7 +151,7 @@ class WebReports:
         msg = prepare_report(self.directory, settings["recipient"], settings["sender"], current_time=now, report_text=report)
         write_private(self.path, {"id": secrets.token_urlsafe(24), "created_at": datetime.now(timezone.utc).isoformat(),
             "recipient": settings["recipient"], "sender": settings["sender"], "subject": str(msg["Subject"]),
-            "body": msg.get_content(), "ai": ai, "settings_digest": settings_digest(settings),
+            "body": msg.get_content(), "ai": ai, "suggestions": suggestions, "policy_id": policy_id, "settings_digest": settings_digest(settings),
             "report_day": self.report_day(now), "resolution_count": summary.get("resolution_count", 0), "delivery": "not_sent"})
 
     def send(self, identity):
@@ -156,6 +165,8 @@ class WebReports:
         from email.utils import format_datetime, make_msgid
         preview = read_json(self.path, {})
         settings = load_settings(self.directory)
+        if preview.get("policy_id") and preview["policy_id"] != policy_hash(policy(self.directory)):
+            raise ValueError("Les règles ou les calendriers ont changé. Prépare un nouvel aperçu.")
         if preview.get("report_day") != self.report_day():
             raise ValueError("Prépare un aperçu pour la journée en cours.")
         summary = read_json(self.directory / "exports/summary.json", {})

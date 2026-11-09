@@ -26,6 +26,11 @@ def derive_state(messages, resolutions=None):
                             format=event.get("format", message.get("format", "unknown")))
                 execution = event["execution"]
                 if execution in ("failure", "warning"):
+                    if task["state"] not in ("open", "warning"):
+                        task["opened_at"] = date
+                        task["escalated_at"] = None
+                    elif task["state"] == "warning" and execution == "failure":
+                        task["escalated_at"] = date
                     task["state"] = "open" if execution == "failure" or task["state"] == "open" else "warning"
                     task["active_occurrences"] += 1
                     task["last_problem"] = message["date"]
@@ -97,6 +102,9 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
     # Anciens exports conservés lors d'une mise à jour, avant la première collecte.
     if any("resolved_at" not in task for task in tasks):
         tasks = list(derive_state(messages)[0].values())
+    suspended = summary.get("expected_reports_enabled") and not summary.get("monitoring_available")
+    if suspended:
+        tasks = [t for t in tasks if t.get("format") != "missing-report"]
     recent = day_messages(messages, current_time, tz)
     groups, older = {}, []
     for task in tasks:
@@ -115,6 +123,15 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         group = groups.setdefault(group_id, {"summary": task.get("summary", task["key"]),
                                               "date": task["last_problem"], "severity": 0 if task["state"] == "open" else 1,
                                               "occurrences": 0, "resources": set()})
+        if task.get("format") == "missing-report":
+            change = "Rapport manquant"
+        elif (task.get("escalated_at") or "") >= cutoff:
+            change = "Aggravation"
+        elif (task.get("opened_at") or task["last_problem"]) >= cutoff:
+            change = "Nouveau"
+        else:
+            change = "Répété"
+        group.setdefault("changes", set()).add(change)
         group["occurrences"] += task["active_occurrences"]
         group["resources"].add(task["key"])
         group["date"] = max(group["date"], task["last_problem"])
@@ -162,7 +179,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         groups[(m["scope"], "unknown:" + model)] = {"summary": m["summary"] if m.get("recognized") else m["subject"],
                                                     "date": m["date"], "severity": 2,
                                                     "occurrences": count, "resources": set()}
-    ordered = sorted(groups.values(), key=lambda g: (g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
+    ordered = sorted(groups.values(), key=lambda g: (g.get("changes") == {"Répété"}, g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
     recovered = sorted((t for t in tasks if t["state"] == "resolved" and t["resolved_at"]
                         and cutoff <= t["resolved_at"] <= end),
                        key=lambda t: t["resolved_at"], reverse=True)
@@ -174,6 +191,8 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
              count(len(ordered), "point du jour à examiner", "points du jour à examiner") + " · "
              + count(len(older), "problème antérieur ouvert", "problèmes antérieurs ouverts") + " · "
              + count(len(recovered), "résolution du jour", "résolutions du jour")]
+    if suspended:
+        lines.extend(["", "Collecte IMAP à vérifier. La détection des rapports manquants est suspendue."])
     if ordered:
         lines.extend(["", "À EXAMINER EN PRIORITÉ"])
         hidden = 0
@@ -183,6 +202,9 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 continue
             label = "ÉCHEC" if group["severity"] == 0 else "À VÉRIFIER" if group["severity"] == 2 else "ATTENTION"
             line = f"- {label} — {readable(group['summary'])}"
+            changes = group.get("changes", set()) - {"Rapport manquant"}
+            if changes:
+                line += " · " + ", ".join(sorted(changes))
             if len(group["resources"]) > 1:
                 names = ", ".join(sorted(readable(key.split("|", 2)[-1]) for key in group["resources"]))
                 line += f" ({len(group['resources'])} ressources concernées) — {names}"
@@ -194,17 +216,24 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         if hidden:
             lines.append(f"{hidden} autre(s) point(s) : détail conservé dans les exports locaux.")
 
-    if older:
-        lines += ["", "PROBLÈMES TOUJOURS OUVERTS"]
-        for task in sorted(older, key=lambda t: (t["state"] != "open", t["key"])):
-            label = "ÉCHEC" if task["state"] == "open" else "ATTENTION"
-            when = local_stamp(task["last_problem"], zone) if task["last_problem"] else "date inconnue"
-            lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} (dernier signal le {when})")
     if recovered:
         lines += ["", "RÉTABLIS AUJOURD’HUI"]
         for task in recovered:
-            origin = "Validé manuellement" if task.get("resolved_by") == "manual" else "Confirmé par les logs"
+            origin = "Validé manuellement" if task.get("resolved_by") == "manual" else ("Réception confirmée" if task.get("format") == "missing-report" else "Confirmé par les logs")
             lines.append(f"- {readable(task.get('summary') or task['key'])} — {origin} le {local_stamp(task['resolved_at'], zone)}")
+
+    if older:
+        lines += ["", "PROBLÈMES TOUJOURS OUVERTS"]
+        def server(task):
+            parts = task["key"].removeprefix("missing|").split("|")
+            return parts[1] if len(parts) > 1 else "Serveur non identifié"
+        for host, entries in itertools.groupby(sorted(older, key=lambda t: (server(t), t["key"])), server):
+            lines.append("Serveur / source — " + readable(host))
+            for task in entries:
+                label = "ÉCHEC" if task["state"] == "open" else "ATTENTION"
+                first = local_stamp(task.get("opened_at") or task["last_problem"], zone)
+                last = local_stamp(task["last_problem"], zone)
+                lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} · ouvert le {first} · dernier signal le {last}")
 
     unreadable = sum(bool(m["coverage_warnings"]) for m in recent)
     if unreadable:

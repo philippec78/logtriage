@@ -24,7 +24,9 @@ from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
 from .settings import load_settings, save_settings
-from .store import current_bilan
+from .store import Store, current_bilan
+from .monitoring import policy, change, schedule
+from .user_rules import activate, simulate
 from .web_reports import WebReports, error_message
 
 LOG = logging.getLogger("logtriage.web")
@@ -149,10 +151,17 @@ class WebApplication:
     def state(self):
         settings = load_settings(self.directory)
         summary, bilan = current_bilan(self.directory, datetime.now(timezone.utc), os.environ.get("TZ", "Europe/Zurich"), settings)
-        return {"version": __version__, "settings": settings,
+        catalog = read_json(self.directory / "exports/rule-options.json", {})
+        monitoring = policy(self.directory)
+        return {"monitoring": {"schedules": monitoring["schedules"],
+                "rules": [{k: v for k, v in r.items() if k != "examples"} for r in monitoring["rules"]],
+                "tasks": read_json(self.directory / "exports/monitor-options.json", []),
+                "unknown": catalog.get("items", []) if catalog.get("day") == summary.get("report_day") else []},
+                "version": __version__, "settings": settings,
                 "status": read_json(self.directory / "status.json"),
                 "summary": summary,
-                "incidents": read_json(self.directory / "exports/open-incidents.json", []),
+                "incidents": [row for row in read_json(self.directory / "exports/open-incidents.json", [])
+                              if not row.get("missing") or summary.get("monitoring_available")],
                 "latest_digest": bilan,
                 "chatgpt": self.chatgpt.state(), "models": self.chatgpt.cached_models(),
                 "report": self.reports.state(), "mailbox": {"host": os.environ.get("IMAP_HOST", ""),
@@ -256,6 +265,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True}, extra={"Set-Cookie": "logtriage=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + ("; Secure" if self.app.secure else "")})
             if path == "/api/settings":
                 save_settings(self.app.directory, values)
+                return self.reply(200, {"ok": True})
+            if path == "/api/rules/test":
+                return self.reply(200, simulate(self.app.directory, values))
+            if path in ("/api/schedules/save", "/api/schedules/remove", "/api/rules/activate", "/api/rules/remove"):
+                if path == "/api/schedules/save":
+                    schedule(self.app.directory, values)
+                elif path == "/api/rules/activate":
+                    activate(self.app.directory, values.get("token"))
+                else:
+                    change(self.app.directory, path.split("/")[2], values.get("id"))
+                store = Store(self.app.directory)
+                try:
+                    store.export(os.environ.get("TZ", "Europe/Zurich"), load_settings(self.app.directory))
+                finally:
+                    store.close()
                 return self.reply(200, {"ok": True})
             if path == "/api/resolve":
                 self.app.reports.resolve(values.get("ids", [values.get("id")]))

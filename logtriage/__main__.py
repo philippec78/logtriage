@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .analyze import analyze
-from .collector import poll
+from .collector import mailbox_scope, poll
 from .store import Store, atomic_json, now
 
 LOG = logging.getLogger("logtriage")
@@ -63,8 +63,6 @@ def load_rules():
     rules = json.loads(Path(os.environ.get("RULES_FILE", str(default))).read_text(encoding="utf-8"))
     if rules["synology"].get("completion_is_recovery"):
         raise ValueError("La clôture par simple fin de tâche n’est pas autorisée dans cette version")
-    if rules.get("expected_reports", {}).get("enabled"):
-        raise ValueError("La surveillance des rapports manquants n’est pas implémentée dans cette version")
     if not 1 <= rules["wazuh"]["review_min_level"] <= rules["wazuh"]["urgent_min_level"]:
         raise ValueError("Seuils Wazuh invalides")
     if not 0 <= rules["openvas"]["notification_cvss"] <= 10:
@@ -89,13 +87,13 @@ def run_cycle(config, store, rules):
     options = load_settings(store.directory)
     report_config = {**rules.get("report", {}), "max_groups": options["max_groups"]}
     status = {"last_cycle_at": now(), "poll_seconds": config.interval,
-              "mode": "read_only", "state": "error"}
+              "mode": "read_only", "scope": mailbox_scope(config), "state": "error"}
     try:
+        status["checked_through"] = now()
         stats = poll(config, store, rules)
-        summary = store.export(os.environ.get("TZ", "Europe/Zurich"), report_config)
         status.update(last_cycle_at=now(), last_success_at=now(),
                       state="degraded" if stats["failures"] or stats["skipped"] else "ok",
-                      collection=stats, summary=summary)
+                      collection=stats)
         LOG.info("Collecte terminée : %s nouveaux, %s doublons, %s en attente, %s non analysés",
                  stats["new"], stats["duplicate"], stats["pending"],
                  len(stats["failures"]) + len(stats["skipped"]))
@@ -104,7 +102,7 @@ def run_cycle(config, store, rules):
         status["error_type"] = type(exc).__name__
         LOG.error("Collecte impossible (%s). Vérifie la connexion et la configuration.", type(exc).__name__)
         # Les résultats des messages déjà importés restent consultables.
-        store.export(os.environ.get("TZ", "Europe/Zurich"), report_config)
+    status["summary"] = store.export(os.environ.get("TZ", "Europe/Zurich"), report_config, collection_status=status)
     atomic_json(store.directory / "status.json", status)
     return status["state"] == "ok"
 

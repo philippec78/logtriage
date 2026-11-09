@@ -97,6 +97,7 @@ function render(state) {
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
   renderIncidents(state.incidents || []);
   settings(state);
+  renderMonitoring(state);
   const preview=state.report.preview, job=state.report.job, running=job.state==='running';
   $('prepare').disabled=running || busy; $('prepare').textContent=running&&job.kind==='preview'?'Préparation en cours…':'Préparer le rapport'; $('prepare').setAttribute('aria-busy',String(running&&job.kind==='preview'));
   $('recipient-summary').textContent=state.settings.recipient?'Destinataire : '+state.settings.recipient:'Renseigne le destinataire dans les réglages.';
@@ -106,11 +107,12 @@ function render(state) {
   showReport($('report-preview'), preview?.body || 'Choisis le type de bilan, puis prépare l’aperçu.');
   $('preview-to').textContent=preview?.recipient||''; $('preview-subject').textContent=preview?.subject||'';
   $('ai-warning').hidden=!preview?.ai?.message; $('ai-warning').textContent=preview?.ai?.message||'';
-  const stalePreview = preview && (preview.resolution_count || 0) !== (state.summary?.resolution_count || 0);
+  const policyChanged = preview?.policy_id && preview.policy_id !== state.summary?.policy_id;
+  const stalePreview = preview && (policyChanged || (preview.resolution_count || 0) !== (state.summary?.resolution_count || 0));
   $('send').disabled=!preview || stalePreview || running || preview.delivery!=='not_sent' || busy;
   $('send').textContent=running&&job.kind==='send'?'Envoi en cours…':'Envoyer cet aperçu';
   $('delivery-status').textContent=preview?.delivery_message || (preview?.ai?.state==='completed'?'Analyse ChatGPT ajoutée. Aucun envoi effectué.':'Aucun envoi effectué depuis cet aperçu.');
-  if (stalePreview && preview.delivery === 'not_sent') $('delivery-status').textContent = 'Un incident a été validé. Prépare un nouvel aperçu pour l’envoyer.';
+  if (stalePreview && preview.delivery === 'not_sent') $('delivery-status').textContent = policyChanged ? 'Les règles ou les calendriers ont changé. Prépare un nouvel aperçu.' : 'Un incident a été validé. Prépare un nouvel aperçu pour l’envoyer.';
   $('last-send').textContent=state.report.last_send?'Dernière acceptation SMTP : '+date(state.report.last_send.accepted_at)+' pour '+state.report.last_send.recipient:'';
   if(job.state==='error') notice(job.message,true);
   view();
@@ -143,6 +145,123 @@ $('connect-chatgpt').addEventListener('click',()=>action($('connect-chatgpt'),as
 $('disconnect-chatgpt').addEventListener('click',()=>action($('disconnect-chatgpt'),async()=>{const result=await api('/api/chatgpt/disconnect',{});notice(result.message);}));
 $('account-picker').addEventListener('change',()=>{profileChoice=$('account-picker').value;if(profileChoice)action($('account-picker'),async()=>{await api('/api/chatgpt/select',{profile:profileChoice});});});
 $('load-models').addEventListener('click',()=>action($('load-models'),async()=>{await api('/api/models',{});notice('Modèles disponibles actualisés. Choisis un modèle puis enregistre les réglages.');}));
+const weekdays = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+const outcomeNames = {failure:'Échec', warning:'Avertissement', completed:'Fin annoncée', success:'Réussite confirmée'};
+let ruleToken = null;
+for (const [index, name] of weekdays.entries()) {
+  const label = document.createElement('label');
+  label.className = 'checkbox';
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.value = String(index);
+  input.checked = true;
+  label.append(input, name);
+  $('schedule-days').append(label);
+}
+function clearTest() {
+  ruleToken = null;
+  $('rule-result').replaceChildren();
+  $('activate-rule').hidden = true;
+}
+function renderPolicyList(id, rows, makeRow) {
+  const list = $(id);
+  const key = JSON.stringify(rows);
+  if (list.dataset.rows === key) return;
+  list.replaceChildren(...rows.map(makeRow));
+  list.dataset.rows = key;
+}
+function button(text, callback) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.textContent = text;
+  el.addEventListener('click', () => callback(el));
+  return el;
+}
+function loadSchedule(row) {
+  $('scheduled-task').value = row.id;
+  $('schedule-time').value = row.time;
+  for (const day of $('schedule-days').querySelectorAll('input')) day.checked = row.days.includes(Number(day.value));
+}
+function renderMonitoring(state) {
+  const data = state.monitoring;
+  if (!data) return;
+  options($('scheduled-task'), data.tasks, $('scheduled-task').value, 'Choisis une tâche');
+  const list = (rows, target, section) => renderPolicyList(target, rows, row => {
+    const li = document.createElement('li');
+    const title = document.createElement('span');
+    title.textContent = section === 'schedules' ? row.label + ' · ' + row.days.map(d => weekdays[d]).join(', ') + ' à ' + row.time :
+      row.task + ' · ' + row.sender + ' · « ' + row.family + ' » / « ' + row.phrase + ' » · ' + outcomeNames[row.outcome];
+    li.append(title);
+    if (section === 'schedules') li.append(button('Modifier', () => loadSchedule(row)));
+    li.append(button('Retirer', el => action(el, async () => {
+      await api('/api/'+section+'/remove', {id:row.id});
+      $('monitoring-status').textContent = section === 'schedules' ? 'Calendrier retiré.' : 'Règle retirée.';
+    })));
+    return li;
+  });
+  list(data.schedules, 'schedules-list', 'schedules');
+  list(data.rules, 'rules-list', 'rules');
+  const sources = data.unknown.map(m => ({id:m.scope+'/'+m.id, label:m.subject+' · '+m.sender}));
+  options($('rule-source'), sources, $('rule-source').value, 'Choisis un exemple');
+  $('rule-empty').hidden = sources.length > 0;
+  $('rule-editor').hidden = sources.length === 0;
+  const suggestions = (state.report.preview?.suggestions || []).filter(s => data.unknown.some(m => m.id === s.id && m.scope === s.scope));
+  renderPolicyList('rule-suggestions', suggestions, s => button('Créer une règle pour « '+s.subject+' »', () => {
+    location.hash = 'reglages';
+    $('rule-source').value = s.scope+'/'+s.id;
+    $('rule-source').dispatchEvent(new Event('change'));
+    $('rule-phrase').value = s.quote;
+    $('rule-field').value = s.subject.includes(s.quote) ? 'subject' : 'body';
+    requestAnimationFrame(() => $('rule-task').focus());
+  }));
+}
+$('scheduled-task').addEventListener('change', () => {
+  const row = current.monitoring.schedules.find(s => s.id === $('scheduled-task').value);
+  if (row) loadSchedule(row);
+});
+$('schedule-form').addEventListener('submit', event => {
+  event.preventDefault();
+  action(event.submitter, async () => {
+    const days = Array.from($('schedule-days').querySelectorAll(':checked'), e => Number(e.value));
+    await api('/api/schedules/save', {id:$('scheduled-task').value, days, time:$('schedule-time').value});
+    $('monitoring-status').textContent = 'Calendrier enregistré.';
+  });
+});
+$('rule-source').addEventListener('change', () => {
+  clearTest();
+  const row = current.monitoring.unknown.find(m => m.scope+'/'+m.id === $('rule-source').value);
+  $('rule-family').value = row?.subject.slice(0,240) || '';
+  $('rule-task').value = $('rule-phrase').value = '';
+});
+$('rule-form').addEventListener('input', clearTest);
+$('rule-form').addEventListener('submit', event => {
+  event.preventDefault();
+  clearTest();
+  action(event.submitter, async () => {
+    const [scope, source] = $('rule-source').value.split('/');
+    const body = {scope, source};
+    for (const k of ['family','task','phrase','field','outcome']) body[k] = $('rule-'+k).value;
+    const revision = $('rule-form').dataset.edits;
+    const result = await api('/api/rules/test', body);
+    if ($('rule-form').dataset.edits !== revision) return;
+    const list = document.createElement('ul');
+    for (const row of result.rows) {
+      const li = document.createElement('li');
+      li.textContent = date(row.date)+' · '+row.subject+' — '+row.result;
+      list.append(li);
+    }
+    $('rule-result').replaceChildren(result.message, list);
+    ruleToken = result.token;
+    $('activate-rule').hidden = !ruleToken;
+  });
+});
+$('rule-form').addEventListener('input', () => { $('rule-form').dataset.edits = String(Number($('rule-form').dataset.edits || 0)+1); });
+$('activate-rule').addEventListener('click', () => action($('activate-rule'), async () => {
+  await api('/api/rules/activate', {token:ruleToken});
+  clearTest();
+  $('monitoring-status').textContent = 'Règle activée.';
+}));
+
 window.addEventListener('hashchange',view);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh(true);});
 setInterval(()=>{if(!document.hidden && !busy && !$('application').hidden)refresh(true);},3000);

@@ -34,6 +34,7 @@
         <div class="section-heading"><h2>Aperçu de l’email</h2><span id="preview-date"></span></div>
         <dl id="mail-headers" class="mail-headers" hidden><div><dt>À</dt><dd id="preview-to"></dd></div><div><dt>Objet</dt><dd id="preview-subject"></dd></div></dl>
         <div id="ai-warning" class="notice" role="status" hidden></div>
+        <div id="rule-suggestions" class="policy-list"></div>
         <div id="report-preview" class="report-text empty">Aucun rapport préparé. Choisis le type de bilan, puis prépare l’aperçu.</div>
       </div><aside class="send-controls" aria-label="Préparation et envoi">
         <h2>Préparation</h2><p id="recipient-summary"></p><a href="#reglages">Modifier les réglages d’envoi</a>
@@ -47,6 +48,35 @@
     </section>
     <section id="view-reglages" class="view" hidden aria-labelledby="reglages-title">
       <div class="page-heading"><div><h1 id="reglages-title">Réglages</h1><p>Les modifications sont conservées après le redémarrage du conteneur.</p></div></div>
+      <form id="schedule-form">
+        <fieldset><legend>Rapports attendus</legend>
+          <ul id="schedules-list" class="policy-list"></ul>
+          <div class="fields"><div><label for="scheduled-task">Tâche à surveiller</label><select id="scheduled-task" required></select></div>
+          <div><label for="schedule-time">Heure limite de réception en Suisse</label><input type="time" id="schedule-time" required value="07:00"></div></div>
+          <fieldset class="weekdays"><legend>Jours où le rapport doit arriver</legend><div id="schedule-days"></div></fieldset>
+          <button type="submit">Enregistrer le calendrier</button>
+          <p class="hint">La surveillance commence à la prochaine échéance après l’enregistrement.</p>
+        </fieldset>
+      </form>
+      <form id="rule-form">
+        <fieldset><legend>Règles pour les formats inconnus</legend>
+          <ul id="rules-list" class="policy-list"></ul>
+          <p id="rule-empty">Aucun email inconnu aujourd’hui.</p>
+          <div id="rule-editor" hidden>
+            <label for="rule-source">Email du jour à reconnaître</label><select id="rule-source" required></select>
+            <div class="fields"><div><label for="rule-task">Nom de la tâche sur ce serveur</label><input id="rule-task" required minlength="2" maxlength="240"></div>
+            <div><label for="rule-family">Texte commun dans l’objet</label><input id="rule-family" required minlength="2" maxlength="240"></div>
+            <div><label for="rule-field">Où chercher le résultat</label><select id="rule-field"><option value="subject">Dans l’objet</option><option value="body">Dans le texte de l’email</option></select></div>
+            <div><label for="rule-phrase">Expression qui confirme le résultat</label><input id="rule-phrase" required minlength="2" maxlength="240"></div>
+            <div><label for="rule-outcome">Résultat à attribuer</label><select id="rule-outcome"><option value="warning">Avertissement</option><option value="failure">Échec</option><option value="completed">Fin annoncée</option><option value="success">Réussite confirmée</option></select></div></div>
+            <p class="hint">Utilise le même nom de tâche pour ses échecs et ses réussites. La règle se limite à l’expéditeur de cet exemple.</p>
+            <button type="submit">Tester sur l’historique</button>
+            <div id="rule-result" aria-live="polite"></div>
+            <button id="activate-rule" type="button" hidden>Activer la règle testée</button>
+          </div>
+        </fieldset>
+      </form>
+      <p id="monitoring-status" role="status"></p>
       <form id="settings-form">
         <fieldset><legend>Bilan et collecte</legend><div class="fields">
           <div><label for="max_groups">Limite des points récents (tâches ouvertes toujours incluses)</label><input id="max_groups" name="max_groups" type="number" min="1" max="100" required></div>

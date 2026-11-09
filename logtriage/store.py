@@ -7,6 +7,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .digest import day_messages, derive_state, render_digest
+from .user_rules import apply_rules
+from .monitoring import identity, policy, reliable, schedule_events, task_options
 from .private import locked, read_json
 
 
@@ -35,7 +37,11 @@ def current_bilan(directory, moment, tz, settings):
         summary = read_json(export / "summary.json")
         if not summary:
             return {}, ""
-        if summary.get("report_day") == moment.astimezone(ZoneInfo(tz)).date().isoformat():
+        available = reliable(read_json(directory / "status.json", {}), moment) if summary.get("expected_reports_enabled") else None
+        refresh_health = available is False and summary.get("monitoring_available")
+        if refresh_health:
+            summary["monitoring_available"] = False
+        if not refresh_health and summary.get("report_day") == moment.astimezone(ZoneInfo(tz)).date().isoformat():
             return summary, (export / "bilan.txt").read_text(encoding="utf-8")
         messages = read_json(export / "messages.json", [])
         summary.update(daily_counts(messages, moment, tz))
@@ -66,10 +72,14 @@ class Store:
     def close(self):
         self.db.close()
 
-    def seen(self, reference, revision=None):
+    def seen(self, reference, revision=None, body_revision=None):
         row = self.db.execute("SELECT m.result FROM refs r JOIN messages m ON "
                               "r.scope=m.scope AND r.sha=m.sha WHERE r.ref=?", (reference,)).fetchone()
-        return row is not None and (revision is None or json.loads(row[0]).get("analysis_revision") == revision)
+        if row is None:
+            return False
+        message = json.loads(row[0])
+        return ((revision is None or message.get("analysis_revision") == revision)
+                and (not body_revision or message.get("recognized") or message.get("body_revision") == body_revision))
 
     def set_setting(self, key, value):
         with self.db:
@@ -93,12 +103,12 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO refs VALUES (?,?,?)", (reference, scope, result["sha256"]))
         return inserted
 
-    def export(self, tz="Europe/Zurich", report_config=None, resolve_signal=None, *, resolve_signals=()):
+    def export(self, tz="Europe/Zurich", report_config=None, resolve_signal=None, *, resolve_signals=(), collection_status=None):
         signals = (resolve_signal,) if resolve_signal is not None else resolve_signals
         with locked(self.directory / "export.lock"):
-            return self._export(tz, report_config, signals)
+            return self._export(tz, report_config, signals, collection_status)
 
-    def _export(self, tz, report_config, signals):
+    def _export(self, tz, report_config, signals, collection_status):
         rows = self.db.execute("SELECT scope,sha,result,imported_at FROM messages").fetchall()
         messages = []
         for scope, sha, payload, imported in rows:
@@ -110,8 +120,14 @@ class Store:
         messages.sort(key=lambda r: (r["date"], r["sha256"]))
         # Recalcul chronologique : un email ancien importé tardivement ne rouvre pas
         # un incident dont une réussite plus récente est déjà connue.
+        moment = datetime.now(timezone.utc)
+        config = policy(self.directory)
+        status = collection_status if collection_status is not None else read_json(self.directory / "status.json", {})
+        messages = [apply_rules(m, config["rules"]) for m in messages] if config["rules"] else messages
+        scheduled = schedule_events(config["schedules"], messages, status, moment, tz)
+        state_events = messages + scheduled
         resolutions = dict(self.db.execute("SELECT signal,resolved_at FROM resolutions"))
-        tasks, observations = derive_state(messages, resolutions)
+        tasks, observations = derive_state(state_events, resolutions)
         pending_ids = set(signals).difference(resolutions)
         if pending_ids:
             open_tasks = {t["signal_id"]: t for t in tasks.values() if t["state"] in ("open", "warning")}
@@ -122,22 +138,26 @@ class Store:
                 self.db.executemany("INSERT INTO resolutions VALUES (?,?,?,?)",
                                     [(key, open_tasks[key]["scope"], open_tasks[key]["key"], at) for key in pending_ids])
             resolutions.update(dict.fromkeys(pending_ids, at))
-            tasks, observations = derive_state(messages, resolutions)
+            tasks, observations = derive_state(state_events, resolutions)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))
-        moment = datetime.now(timezone.utc)
         summary = {**daily_counts(messages, moment, tz), "generated_at": moment.isoformat(), "mode": "read_only", "total_messages": len(messages),
                    "categories": counts, "open_tasks": sum(t["state"] == "open" for t in tasks.values()),
                    "resolution_count": len(resolutions),
-                   "observation_groups": len(observations), "expected_reports_enabled": False,
+                   "observation_groups": len(observations), "expected_reports_enabled": bool(config["schedules"]),
+                   "policy_id": identity(config), "monitoring_available": reliable(status, moment),
                    "recognized_messages": sum(bool(m.get("recognized")) for m in messages),
                    "unrecognized_messages": sum(not m.get("recognized") for m in messages),
                    "formats": dict(collections.Counter(m.get("format", "unknown") for m in messages)),
                    "outgoing_notifications_enabled": False}
         atomic_json(export / "messages.json", messages)
         atomic_json(export / "tasks.json", list(tasks.values()))
+        atomic_json(export / "monitor-options.json", task_options(tasks.values()))
+        unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
+                   for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
+        atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})
         pending = [{"id": t["signal_id"], "summary": t.get("summary") or t["key"],
-                    "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
+                    "missing": t.get("format") == "missing-report", "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
                    if t["state"] in ("open", "warning")]
         pending.sort(key=lambda t: t["date"], reverse=True)
         pending.sort(key=lambda t: t["severity"] != "open")

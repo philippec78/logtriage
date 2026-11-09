@@ -3,8 +3,11 @@ import imaplib
 import logging
 import re
 import ssl
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timedelta, timezone
 
+from .monitoring import policy
+from .user_rules import body_revision, matched_body
 from .analyze import analyze, rules_revision
 
 LOG = logging.getLogger(__name__)
@@ -53,7 +56,9 @@ def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
         pending = [(uid, f"{scope}|{config.folder}|{uidvalidity}|{uid.decode('ascii')}")
                    for uid in uids if re.fullmatch(rb"\d+", uid)]
         revision = rules_revision(rules)
-        pending = [(uid, ref) for uid, ref in pending if not store.seen(ref, revision)]
+        body_rules = [r for r in policy(store.directory)["rules"] if r["scope"] == scope and r["field"] == "body"]
+        body_version = body_revision(body_rules) if body_rules else None
+        pending = [(uid, ref) for uid, ref in pending if not store.seen(ref, revision, body_version)]
         # Rotation des tentatives : un groupe d’emails illisibles ne bloque pas la suite.
         cursor_key = scope + ":cursor:" + uidvalidity
         cursor = int(store.setting(cursor_key, "0"))
@@ -61,7 +66,7 @@ def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
         stats["pending"] = max(0, len(pending) - config.batch_size)
         for uid, reference in pending[:config.batch_size]:
             try:
-                status, metadata = client.uid("FETCH", uid, "(RFC822.SIZE)")
+                status, metadata = client.uid("FETCH", uid, "(RFC822.SIZE INTERNALDATE)")
                 raw_metadata = b" ".join(x for x in metadata if isinstance(x, bytes))
                 size = re.search(rb"RFC822.SIZE\s+(\d+)", raw_metadata)
                 if status != "OK" or not size:
@@ -78,6 +83,15 @@ def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
                 if len(raw) > config.max_bytes:
                     raise ValueError("Message trop volumineux")
                 result = analyze(raw, rules)
+                if body_version and not result.get("recognized"):
+                    from .unknown_review import extract_sample
+                    sample = extract_sample(raw, result)
+                    result["body_matches"] = matched_body(body_rules, {**result, "scope": scope}, sample)
+                    result["body_revision"] = body_version
+                internal = re.search(rb'INTERNALDATE "([^"]+)"', raw_metadata)
+                if internal:
+                    stamp = parsedate_to_datetime(internal[1].decode("ascii").replace("-", " ", 2))
+                    result["received_at"] = stamp.astimezone(timezone.utc).isoformat()
                 inserted = store.put(reference, scope, result)
                 stats["new" if inserted else "duplicate"] += 1
             except (ValueError, TypeError, LookupError):

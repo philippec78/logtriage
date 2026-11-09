@@ -199,7 +199,7 @@ class ReadOnlyIMAPTests(unittest.TestCase):
                 calls.append((command, *args))
                 if command == "SEARCH":
                     return "OK", [b"42"]
-                if command == "FETCH" and args[1] == "(RFC822.SIZE)":
+                if command == "FETCH" and args[1] == "(RFC822.SIZE INTERNALDATE)":
                     return "OK", [f"1 (RFC822.SIZE {len(raw)})".encode()]
                 if command == "FETCH" and args[1] == "(UID BODY.PEEK[])":
                     return "OK", [(b"1 (UID 42 BODY[])", raw), b")"]
@@ -236,7 +236,7 @@ class ReadOnlyIMAPTests(unittest.TestCase):
             def uid(self, command, *args):
                 calls.append((command, *args))
                 if command == "SEARCH": return "OK", [b"1"]
-                if command == "FETCH" and args[1] == "(RFC822.SIZE)":
+                if command == "FETCH" and args[1] == "(RFC822.SIZE INTERNALDATE)":
                     return "OK", [b"1 (RFC822.SIZE 999999)"]
                 raise AssertionError("Le corps ne doit pas être téléchargé")
         cfg = Config("imap.test", 993, "user", "secret", "INBOX", 30, 300, 10, 1024, 30)

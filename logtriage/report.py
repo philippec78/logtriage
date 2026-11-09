@@ -46,12 +46,12 @@ def prepare_report(directory, recipient, sender, current_time=None, report_text=
         raise ValueError("Horodatage du rapport invalide")
     warnings = []
     age = (current_time - min(generated, cycle)).total_seconds()
-    if age > max(900, int(status.get("poll_seconds", 300)) * 3):
+    if not summary.get("expected_reports_enabled") and age > max(900, int(status.get("poll_seconds", 300)) * 3):
         warnings.append("ATTENTION : ce bilan est ancien ; vérifie la collecte dans Portainer.")
-    if status.get("state") != "ok":
+    if not summary.get("expected_reports_enabled") and status.get("state") != "ok":
         warnings.append("ATTENTION : la dernière collecte est en erreur ou incomplète. Le bilan reflète les résultats disponibles.")
     pending = status.get("collection", {}).get("pending", 0)
-    if pending:
+    if pending and not summary.get("expected_reports_enabled"):
         warnings.append(f"ATTENTION : {pending} message(s) restent en attente d’analyse.")
     zone = ZoneInfo(os.environ.get("TZ", "Europe/Zurich"))
     header = warnings + [""] if warnings else []

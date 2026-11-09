@@ -17,3 +17,11 @@
 .report-text p {margin:3px 0}
 .report-text .report-item {margin-top:12px;font-weight:600}
 .report-text .report-detail {color:var(--muted);font-size:.9rem}
+.policy-list {list-style:none;padding:0;margin:0 0 1rem}
+.policy-list li {display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;padding:.5rem 0;border-bottom:1px solid var(--line)}
+.policy-list li span {flex:1;min-width:12rem;overflow-wrap:anywhere}
+.weekdays {padding:.5rem 0;margin-bottom:.75rem;border:0}
+.weekdays legend {font-size:1rem}
+#schedule-days {display:flex;flex-wrap:wrap;gap:1rem}
+#rule-source {margin-bottom:1rem}
+#rule-result {overflow-wrap:anywhere}
