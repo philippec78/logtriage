@@ -29,7 +29,8 @@ def mail_detail(message, event):
             if len(points) == 5:
                 break
     return {"kind": "mail", "subject": subject, "summary": summary, "date": message["date"],
-            "execution": event["execution"], "points": points, "assignment_source": assignment_source(message, event)}
+            "execution": event["execution"], "points": points, "assignment_source": assignment_source(message, event),
+            "suggested_client": event.get("suggested_client")}
 
 
 HISTORY_DAYS = 7
@@ -169,6 +170,7 @@ def checks(tasks, messages, moment, tz, manual_closures=None):
         regular = (key[0], key[1].removeprefix("missing|"), key[2])
         rows.append({"client": t.get("client", ""), "family": parts[0], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "host": host, "name": ("Rapport attendu · " if missing else "") + name,
                      "state": state, "missing": missing, "date": stamp,
+                     "suggested_client": source[1].get("suggested_client") if source else None,
                      "bulk_id": identity(*regular) if regular in assignable else None,
                      "detail_id": identity(*key, t.get("message_sha256")), "detail": detail,
                      "incident_detail_id": incident_detail_id(t) if issue_detail else None, "incident_detail": issue_detail,

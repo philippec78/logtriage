@@ -327,12 +327,13 @@ function element(tag, name, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-const clientLabel = domain => domain || 'Domaine indéterminé';
+const clientGroup = owner => !owner || owner.startsWith('@') ? '@' : owner;
+const clientLabel = owner => clientGroup(owner) === '@' ? 'Non attribués' : owner;
 const serviceLabel = row => row.service || 'Autres services';
 let selectedService = '*';
 function matchesScope(row) {
   const client = $('client-filter').value, type = $('type-filter').value;
-  return (client === '*' || (row.client || '') === client) &&
+  return (client === '*' || clientGroup(row.client) === client) &&
     (selectedService === '*' || serviceLabel(row) === selectedService) &&
     (type === '*' || typeLabel(row) === type);
 }
@@ -348,7 +349,7 @@ function renderServices(client, items) {
     selectedService = '*';
     return;
   }
-  const services = [...new Set(items.filter(row => (row.client || '') === client).map(serviceLabel))]
+  const services = [...new Set(items.filter(row => clientGroup(row.client) === client).map(serviceLabel))]
     .sort((a,b) => a.localeCompare(b,'fr'));
   if (!services.includes(selectedService)) selectedService = '*';
   $('services-title').textContent = 'Services de '+clientLabel(client);
@@ -377,13 +378,8 @@ function updateFilter(id, values, label, allLabel, registered) {
     const selected = picker.value;
     picker.replaceChildren(new Option(allLabel,'*'));
     if (registered) {
-      for (const [title, groupItems] of [['Clients enregistrés',registered], ['Domaines détectés',items.filter(v => !registered.includes(v))]]) {
-        if (!groupItems.length) continue;
-        const group = document.createElement('optgroup');
-        group.label = title;
-        group.append(...groupItems.map(v => new Option(label(v),v)));
-        picker.append(group);
-      }
+      picker.add(new Option('Non attribués','@'));
+      picker.append(...registered.map(v => new Option(label(v),v)));
     } else {
       picker.append(...items.map(v => new Option(label(v),v)));
     }
@@ -393,8 +389,8 @@ function updateFilter(id, values, label, allLabel, registered) {
   return picker.value;
 }
 function renderIncidentView(issues) {
-  const client = updateFilter('incident-client', issues.map(row => row.client || ''), clientLabel, 'Tous les clients');
-  const byClient = issues.filter(row => client === '*' || (row.client || '') === client);
+  const client = updateFilter('incident-client', issues.map(row => clientGroup(row.client)), clientLabel, 'Tous les clients');
+  const byClient = issues.filter(row => client === '*' || clientGroup(row.client) === client);
   const service = updateFilter('incident-service', byClient.map(serviceLabel), value => value, 'Tous les services');
   const byService = byClient.filter(row => service === '*' || serviceLabel(row) === service);
   const type = updateFilter('incident-type', byService.map(typeLabel), value => value, 'Tous les types');
@@ -410,10 +406,10 @@ function renderClientView(state) {
   const counts = state.summary?.clients_today || {};
   const rows = state.checks || [], issues = state.incidents || [];
   const catalog = [...rows, ...issues, ...(state.monitoring?.tasks || [])];
-  const client = updateFilter('client-filter', [...(state.clients || []), ...Object.keys(counts), ...catalog.map(r => r.client || '')],
+  const client = updateFilter('client-filter', [...(state.clients || []), '@', ...Object.keys(counts), ...catalog.map(r => clientGroup(r.client))],
     clientLabel, 'Tous les clients', state.clients || []);
   renderServices(client, catalog);
-  const owns = row => client === '*' || (row.client || '') === client;
+  const owns = row => client === '*' || clientGroup(row.client) === client;
   const types = [...rows, ...issues].filter(r => owns(r) && (selectedService === '*' || selectedService === serviceLabel(r))).map(typeLabel);
   const type = updateFilter('type-filter', types, value => value, 'Tous les types');
   const detailFilter = selectedService !== '*' || type !== '*';
@@ -514,7 +510,7 @@ async function showMailDetail(id) {
     if (detail.kind !== 'mail') return;
     if (detail.assignment_source) {
       $('assign-client').hidden = false;
-
+      if (detail.suggested_client) $('assignment-client').value = detail.suggested_client;
     }
     const meta = element('p','mail-meta','Mail du '+date(detail.date)+' · '+(executionLabels[detail.execution] || 'À confirmer'));
     box.append(meta);
@@ -622,13 +618,13 @@ function renderChecks(rows) {
   const filter = $('check-status').value;
   const list = $('check-groups');
   const matching = rows.filter(r => (!filter || checkKind(r) === filter || (filter === 'resolved' && r.state === 'resolved')) &&
-    (clientLabel(r.client)+' '+r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
+    (clientLabel(r.client)+' '+r.client+' '+r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
   const signature = JSON.stringify([query,filter,matching]);
   if (list.dataset.rows === signature) { updateBulkBar(); return; }
   list.dataset.rows = signature;
   const groups = new Map();
   for (const row of matching) {
-    const section = clientLabel(row.client);
+    const section = clientGroup(row.client);
     if (!groups.has(section)) groups.set(section, []);
     groups.get(section).push(row);
   }
@@ -653,7 +649,7 @@ function renderChecks(rows) {
   for (const domain of [...groups.keys()].sort((a,b)=>a.localeCompare(b,'fr'))) {
     const body = table.createTBody();
     body.className = 'check-group';
-    const heading = element('th','family-title client-domain','Client : '+domain);
+    const heading = element('th','family-title client-domain',domain === '@' ? 'Non attribués' : 'Client : '+domain);
     heading.scope = 'rowgroup';
     heading.colSpan = 5;
     body.insertRow().append(heading);
@@ -681,6 +677,10 @@ function renderChecks(rows) {
       box.setAttribute('aria-label','Cocher '+row.name+' sur '+row.host+' · '+clientLabel(row.client));
       name.append(box,marker,element('span','check-name',row.name));
       if (row.host !== row.name) name.append(element('small','check-host',row.host));
+      if (row.client?.startsWith('@') && row.client.length > 1) {
+        name.append(element('small','check-source','Source : '+row.client.slice(1)));
+      }
+      if (row.suggested_client) name.append(element('small','check-source','Client suggéré : '+row.suggested_client));
       tr.insertCell().textContent = typeLabel(row);
       tr.insertCell().textContent = date(row.date);
       const history = tr.insertCell(), strip = element('span','signal-strip');

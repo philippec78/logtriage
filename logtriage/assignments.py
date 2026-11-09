@@ -1,6 +1,7 @@
 """Attribution privée des contrôles à partir d'une fiche du tableau de bord."""
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 from .clients import assignment_source, message_client
 from .monitoring import identity, policy
@@ -97,7 +98,10 @@ def review_assignment(directory, values, save=False):
             row.update(client=client, id=new_id, label=client+" — "+" · ".join(row["key"].split("|")))
         rules = [r for r in config.get("assignments", []) if tuple(r["source"]) not in rules_to_set
                  and (bulk or tuple(r["source"][:4]) != source)]
-        rules.extend({"source": list(rule), "client": client} for rule in sorted(rules_to_set))
+        at = datetime.now(timezone.utc).isoformat()
+        previous = {tuple(r["source"]): r for r in config.get("assignments", [])}
+        rules.extend({"source": list(rule), "client": client, "learned_since": previous.get(rule, {}).get("learned_since", at)}
+                     for rule in sorted(rules_to_set))
         config["assignments"] = rules
         write_private(root / "monitoring.json", config)
         return result

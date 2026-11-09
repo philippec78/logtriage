@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from .clients import message_client
+from .clients import client_label, message_client
 
 
 def derive_state(messages, resolutions=None, *, manual_closures=None):
@@ -222,7 +222,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 continue
             label = "ÉCHEC" if group["severity"] == 0 else "À VÉRIFIER" if group["severity"] == 2 else "ATTENTION"
             line = f"- {label} — {readable(group['summary'])}"
-            line += " · Client " + (group["client"] or "indéterminé")
+            line += " · Client " + client_label(group["client"])
             changes = group.get("changes", set()) - {"Rapport manquant"}
             if changes:
                 line += " · " + ", ".join(sorted(changes))
@@ -241,7 +241,7 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         lines += ["", "RÉTABLIS AUJOURD’HUI"]
         for task in recovered:
             origin = "Validé manuellement" if task.get("resolved_by") == "manual" else ("Réception confirmée" if task.get("format") == "missing-report" else "Confirmé par les logs")
-            lines.append(f"- {readable(task.get('summary') or task['key'])} · Client {task.get('client') or 'indéterminé'} — {origin} le {local_stamp(task['resolved_at'], zone)}")
+            lines.append(f"- {readable(task.get('summary') or task['key'])} · Client {client_label(task.get('client'))} — {origin} le {local_stamp(task['resolved_at'], zone)}")
 
     if older:
         lines += ["", "PROBLÈMES TOUJOURS OUVERTS"]
@@ -251,12 +251,12 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
         def client_host(task):
             return task.get("client", ""), server(task)
         for (client, host), entries in itertools.groupby(sorted(older, key=lambda t: (client_host(t), t["key"])), client_host):
-            lines.append("Client " + (client or "indéterminé") + " · Serveur / source — " + readable(host))
+            lines.append("Client " + client_label(client) + " · Serveur / source — " + readable(host))
             for task in entries:
                 label = "ÉCHEC" if task["state"] == "open" else "ATTENTION"
                 first = local_stamp(task.get("opened_at") or task["last_problem"], zone)
                 last = local_stamp(task["last_problem"], zone)
-                lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} · Client {client or 'indéterminé'} · ouvert le {first} · dernier signal le {last}")
+                lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} · Client {client_label(client)} · ouvert le {first} · dernier signal le {last}")
 
     unreadable = sum(bool(m["coverage_warnings"]) for m in recent)
     if unreadable:

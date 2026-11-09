@@ -33,7 +33,8 @@ def daily_counts(messages, moment, tz):
     by_client = {}
     for message in today:
         events = [e for e in [message, *message.get("task_events", [])] if e.get("task_key")]
-        for client in {message_client(message, e) for e in events} or {message_client(message)}:
+        owners = {message_client(message, e) for e in events} or {message_client(message)}
+        for client in {"@" if owner.startswith("@") else owner for owner in owners}:
             counts = by_client.setdefault(client, {"messages": 0, "unknown": 0})
             counts["messages"] += 1
             counts["unknown"] += not message.get("recognized")
@@ -135,9 +136,9 @@ class Store:
         config = policy(self.directory)
         status = collection_status if collection_status is not None else read_json(self.directory / "status.json", {})
         messages = [apply_rules(m, config["rules"]) for m in messages] if config["rules"] else messages
-        if config.get("assignments"):
-            assign_clients(messages, config["assignments"])
-        if any("client" not in row for row in config["schedules"]):
+        start = self.setting("client_learning_start", moment.isoformat())
+        assign_clients(messages, config.get("assignments", []), start)
+        if not config.get("explicit_client_scopes") or any(row.get("legacy_client_scope") for row in config["schedules"]):
             options = task_options({"scope": m["scope"], "key": e["task_key"], "client": message_client(m, e)}
                                    for m in messages for e in [m, *m.get("task_events", [])] if e.get("task_key"))
             config = bind_old_schedules(self.directory, options, moment)

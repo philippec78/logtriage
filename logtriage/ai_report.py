@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
-from .clients import message_client
+from .clients import client_label, message_client
 from .openai_http import OpenAIError
 
 
@@ -68,7 +68,7 @@ class ReportAgent:
 
     def event(self, message, details=False):
         value = {k: message.get(k) for k in ("sha256", "date", "category", "summary", "execution", "task_key")}
-        value["client"] = message_client(message)
+        value["client"] = client_label(message_client(message))
         if details:
             value["evidence"] = message.get("evidence", [])[:5]
             value["coverage_warnings"] = message.get("coverage_warnings", [])

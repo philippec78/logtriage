@@ -137,10 +137,43 @@ class WebTests(unittest.TestCase):
         save = {**data,"token":preview["token"]}
         self.assertEqual(self.request("/api/assignments/save", {**save,"check_ids":[ids[0],"obsolete"]})[0], 400)
         self.assertEqual(self.request("/api/assignments/save", {**save,"check_ids":[ids[0]]})[0], 400)
-        self.assertEqual({r["client"] for r in self.request("/api/state")[1]["checks"]}, {"provider.test"})
+        self.assertEqual({r["client"] for r in self.request("/api/state")[1]["checks"]}, {"@provider.test"})
         self.assertEqual(self.request("/api/assignments/save", save)[0], 200)
         owners = {r["name"].lower():r["client"] for r in self.request("/api/state")[1]["checks"]}
-        self.assertEqual(owners, {"homes":"Client A","archives":"Client A","photos":"provider.test"})
+        self.assertEqual(owners, {"homes":"Client A","archives":"Client A","photos":"@provider.test"})
+
+    def test_future_mail_uses_confirmed_assignment_without_claiming_shared_sender(self):
+        self.login()
+        self.request("/api/clients/create", {"name": "vendor.test"})
+        def receive(device, day):
+            msg = EmailMessage()
+            msg["From"] = "relay@vendor.test"
+            msg["Subject"] = f"{device} - plan expires on nov {day}th, 2026"
+            msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
+            msg.set_content(str(msg["Subject"]))
+            result = analyze(msg.as_bytes(), load_rules())
+            result.update(task_key="ups-monitoring|" + str(msg["Subject"]), execution="warning")
+            store.put(result["sha256"], "imap:demo", result)
+        store = Store(self.directory)
+        try:
+            receive("ups-01", 10)
+            receive("ups-02", 10)
+            store.export()
+            rows = self.request("/api/state")[1]["checks"]
+            self.assertEqual({r["client"] for r in rows}, {"@vendor.test"})
+            target = next(r for r in rows if r["host"].startswith("ups-01"))
+            data = {"client":"vendor.test", "check_ids":[target["bulk_id"]]}
+            _, preview, _ = self.request("/api/assignments/preview", data)
+            self.assertEqual(self.request("/api/assignments/save", {**data, "token":preview["token"]})[0], 200)
+            receive("ups-01", 11)
+            receive("ups-02", 11)
+            store.export()
+            rows = self.request("/api/state")[1]["checks"]
+            self.assertEqual(len(rows), 4)
+            for row in rows:
+                self.assertEqual(row["client"], "vendor.test" if row["host"].startswith("ups-01") else "@vendor.test")
+        finally:
+            store.close()
 
     def test_client_directory_migrates_assignments_and_keeps_clients_without_checks(self):
         from logtriage.private import write_private

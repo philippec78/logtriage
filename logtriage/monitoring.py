@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from .clients import message_client
+from .clients import client_label, message_client
 from .private import locked, private_dir, read_json, write_private
 
 
@@ -37,7 +37,7 @@ def task_options(tasks):
     keys = dict.fromkeys((t["scope"], t["key"], t.get("client", "")) for t in tasks
                          if t["scope"].startswith("imap:") and t.get("format") != "missing-report")
     return [{"id": identity(scope, key, client), "key": key, "scope": scope, "client": client,
-             "label": (client or "Domaine indéterminé") + " — " + " · ".join(key.split("|"))}
+             "label": client_label(client) + " — " + " · ".join(key.split("|"))}
             for scope, key, client in keys]
 
 
@@ -51,20 +51,29 @@ def bind_old_schedules(directory, options, moment):
         scoped = {r["id"] for r in config["schedules"] if "client" in r}
         rows = []
         for row in config["schedules"]:
-            matches = by_task[row["scope"], row["key"]]
-            if "client" in row or not matches:
+            if config.get("explicit_client_scopes") and not row.get("legacy_client_scope"):
                 rows.append(row)
                 continue
+            matches = by_task[row["scope"], row["key"]]
+            if "client" in row:
+                old = row["client"]
+                matches = [t for t in matches if t["client"] in (old, "@" + old) or t["client"].startswith("@" + old + "/")]
+            if not matches:
+                rows.append({**row, "legacy_client_scope": True})
+                continue
             for match in matches:
-                if match["id"] in scoped:
+                if match["id"] in scoped and match["id"] != row["id"]:
                     continue
                 bound = {**row, **match}
+                bound.pop("legacy_client_scope", None)
                 if len(matches) == 1:
-                    bound["event_id"] = row["id"]  # Préserve les résolutions des échéances existantes.
-                else:
+                    bound.setdefault("event_id", row["id"])
+                elif match["id"] != row["id"]:
                     bound["since"] = moment.isoformat()
+                scoped.add(match["id"])
                 rows.append(bound)
-        if rows != config["schedules"]:
+        if not config.get("explicit_client_scopes") or rows != config["schedules"]:
+            config["explicit_client_scopes"] = True
             config["schedules"] = rows
             write_private(root / "monitoring.json", config)
         return config

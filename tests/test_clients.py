@@ -175,5 +175,25 @@ class ClientTests(unittest.TestCase):
                  [(ups,ups),(nas,nas),(gh,gh),(parent,parent['task_events'][0])]]
         assign_clients([next_date, nas, other, gh, other_gh, parent],rules)
         self.assertEqual([message_client(m) for m in (next_date,nas,other,gh,other_gh)],
-                         ['client-a','client-a','vendor.test','client-a','github.com'])
-        self.assertEqual([message_client(parent,e) for e in parent['task_events']],['client-a','vendor.test'])
+                         ['client-a','client-a','@vendor.test','client-a','@github.com/bob'])
+        self.assertEqual([message_client(parent,e) for e in parent['task_events']],['client-a','@vendor.test'])
+
+    def test_confirmed_examples_learn_new_dates_and_keep_ambiguous_clients_separate(self):
+        from logtriage.clients import assignment_source, assign_clients, message_client
+        def alert(day, host="ups-01", imported="2026-11-20"):
+            return dict(scope="imap:test", sender="relay@vendor.ch", imported_at=imported,
+                        task_key=f"ups-monitoring|{host} - plan expires on nov {day}th, 2026")
+        original = alert(10)
+        def rule(m, client):
+            source = (*assignment_source(m, m), m["task_key"])
+            return {"source":source, "client":client, "learned_since":"2026-11-15"}
+        rules = [rule(original, "TD")]
+        future, other, old = alert(11), alert(11, "ups-02"), alert(12, imported="2026-11-01")
+        assign_clients([future, other, old], rules)
+        self.assertEqual([message_client(m) for m in (future,other,old)], ["TD","@vendor.ch","@vendor.ch"])
+        self.assertEqual(old["suggested_client"], "TD")
+        conflict, correction = alert(20), alert(13)
+        assign_clients([conflict, correction], [*rules, rule(correction, "ESEDE")])
+        self.assertEqual(message_client(conflict), "@vendor.ch")
+        self.assertNotIn("suggested_client", conflict)
+        self.assertEqual(message_client(correction), "ESEDE")

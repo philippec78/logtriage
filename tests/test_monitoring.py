@@ -39,6 +39,19 @@ class ScheduleTests(unittest.TestCase):
         status = {"state": "ok", "scope": "imap:one", "last_cycle_at": now.isoformat(), **updates}
         return schedule_events([self.row], mails, status, now, ZONE)
 
+    def test_old_sender_calendar_keeps_its_incident_after_becoming_unassigned(self):
+        from logtriage.monitoring import bind_old_schedules, task_options
+        from logtriage.private import private_dir, write_private
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            write_private(private_dir(directory) / "monitoring.json", {"schedules":[self.row], "rules":[]})
+            options = task_options([{**self.row, "client":"@example.org"}])
+            config = bind_old_schedules(directory, options, at(9, 7))
+            row, = config["schedules"]
+            self.assertEqual((row["event_id"], row["client"], row["since"]), ("abc", "@example.org", self.row["since"]))
+            self.assertEqual(row["id"], options[0]["id"])
+            self.assertEqual(bind_old_schedules(directory, options, at(9, 8)), config)
+
     def test_first_deadline_only_after_complete_collection(self):
         for moment in (at(6, 20), at(7, 22), at(9, 5)):
             self.assertEqual(self.events(moment), [])
