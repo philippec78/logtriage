@@ -34,10 +34,13 @@ def checks(tasks, messages, moment, tz):
     start, end = day_bounds(moment, tz)
     history = defaultdict(lambda: deque(maxlen=10))
     sources = {}
+    assignable = set()
     for m in sorted(messages, key=lambda row: row["date"]):
         for e in [m, *m.get("task_events", [])]:
             if e.get("task_key"):
                 key = (m["scope"], e["task_key"], message_client(m, e))
+                if m.get("format") != "missing-report" and assignment_source(m, e):
+                    assignable.add(key)
                 sources[(*key, m.get("sha256"))] = (m, e)
                 if start <= m["date"] <= end:
                     history[key].append([m["date"], e["execution"]])
@@ -66,8 +69,10 @@ def checks(tasks, messages, moment, tz):
                     detail = {"kind": "schedule", "summary": message["summary"], "date": message["date"]}
             else:
                 detail = mail_detail(message, event)
+        regular = (key[0], key[1].removeprefix("missing|"), key[2])
         rows.append({"client": t.get("client", ""), "family": parts[0], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "host": host, "name": ("Rapport attendu · " if missing else "") + name,
                      "state": state, "missing": missing, "date": stamp,
+                     "bulk_id": identity(*regular) if regular in assignable else None,
                      "detail_id": identity(*key, t.get("message_sha256")), "detail": detail,
                      "history": list(history[t["scope"], t["key"], t.get("client", "")])})
     return sorted(rows, key=lambda r: (r["host"].casefold(), r["name"].casefold()))

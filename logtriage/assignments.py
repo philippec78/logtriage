@@ -36,30 +36,51 @@ def review_assignment(directory, values, save=False):
     root = private_dir(directory)
     export = directory / "exports"
     with locked(directory / "export.lock"), locked(root / "monitoring.lock"):
-        detail = read_json(export / "check-details.json", {}).get(values.get("detail_id")) or {}
-        source = detail.get("assignment_source")
-        if not source:
-            raise ValueError("Actualise le tableau de bord et rouvre la fiche du contrôle.")
+        bulk = "check_ids" in values
+        selected = set()
+        source = None
+        if bulk:
+            ids = values["check_ids"]
+            if not isinstance(ids, list) or not ids or not all(isinstance(k, str) for k in ids):
+                raise ValueError("Coche au moins un contrôle.")
+            selected = set(ids)
+            visible = read_json(export / "checks.json", {}).get("items", [])
+            if not selected.issubset({row.get("bulk_id") for row in visible}):
+                raise ValueError("La sélection a changé. Actualise le tableau de bord.")
+        else:
+            detail = read_json(export / "check-details.json", {}).get(values.get("detail_id")) or {}
+            if not detail.get("assignment_source"):
+                raise ValueError("Actualise le tableau de bord et rouvre la fiche du contrôle.")
+            source = tuple(detail["assignment_source"])
         config = policy(directory)
-        matches, other = set(), set()
-        keys = set()
+        exported_policy = read_json(export / "summary.json", {}).get("policy_id")
+        if exported_policy and exported_policy != identity(config):
+            raise ValueError("Le tableau de bord se met à jour. Réessaie après son actualisation.")
+        matches, other, keys, rules_to_set = set(), set(), set(), set()
         for m in read_json(export / "messages.json", []):
-            if m["scope"] != source[0]:
-                continue
             for e in [m, *m.get("task_events", [])]:
-                if not e.get("task_key"):
+                key = e.get("task_key")
+                if not key:
                     continue
-                task = (m["scope"], e["task_key"], message_client(m, e))
-                if assignment_source(m, e) == tuple(source):
-                    matches.add(m["sha256"])
-                    keys.add(task)
-                else:
+                task = (m["scope"], key, message_client(m, e))
+                base = assignment_source(m, e)
+                chosen = identity(*task) in selected if bulk else base == source
+                if not chosen:
                     other.add(task)
-        if not matches:
-            raise ValueError("La source de ce contrôle a changé. Rouvre sa fiche.")
-        token = identity(config, source, client, sorted(matches), sorted(keys))
-        result = {"token": token, "count": len(matches), "checks": sorted({k[1] for k in keys}),
-                  "criterion": source[2] + " · " + (source[3] if source[2] != "Mail" else "ce message uniquement")}
+                    continue
+                if base is None:
+                    raise ValueError("La source de ce contrôle est incomplète.")
+                matches.add((m["scope"], m["sha256"]))
+                keys.add(task)
+                rules_to_set.add((*base, key) if bulk else base)
+        if not matches or (bulk and {identity(*task) for task in keys} != selected):
+            raise ValueError("Les contrôles ont changé. Vérifie la sélection.")
+        token = identity(config, sorted(rules_to_set), client, sorted(matches), sorted(keys))
+        result = {"token": token, "count": len(matches), "checks": sorted({k[1] for k in keys})}
+        if bulk:
+            result["affected"] = [{"client": owner, "key": key} for _, key, owner in sorted(keys)]
+        else:
+            result["criterion"] = source[2] + " · " + (source[3] if source[2] != "Mail" else "ce message uniquement")
         if not save:
             return result
         if values.get("token") != token:
@@ -74,8 +95,9 @@ def review_assignment(directory, values, save=False):
                 raise ValueError("Ce calendrier est partagé. Retire-le puis configure les calendriers par client.")
             row.setdefault("event_id", row["id"])
             row.update(client=client, id=new_id, label=client+" — "+" · ".join(row["key"].split("|")))
-        rules = [r for r in config.get("assignments", []) if r["source"] != source]
-        rules.append({"source": source, "client": client})
+        rules = [r for r in config.get("assignments", []) if tuple(r["source"]) not in rules_to_set
+                 and (bulk or tuple(r["source"][:4]) != source)]
+        rules.extend({"source": list(rule), "client": client} for rule in sorted(rules_to_set))
         config["assignments"] = rules
         write_private(root / "monitoring.json", config)
         return result

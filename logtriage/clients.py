@@ -61,7 +61,10 @@ def assign_clients(messages, rules):
         for event in [message, *message.get("task_events", [])]:
             if not event.get("task_key"):
                 continue
-            client = targets.get(assignment_source(message, event))
+            source = assignment_source(message, event)
+            client = None
+            if source:
+                client = targets.get((*source, event["task_key"]), targets.get(source))
             owner = client or sender_domain(message.get("sender", ""))
             if client or event is not message:
                 event["assigned_client"] = owner

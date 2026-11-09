@@ -50,6 +50,13 @@
           <option value="bad">Échec</option><option value="other">À confirmer</option></select></label>
           <label><span class="sr-only">Rechercher un serveur ou une tâche</span><input id="check-search" type="search" placeholder="Serveur ou tâche"></label>
           <a href="#reglages">Gérer les contrôles</a></div></div>
+        <form id="bulk-form" hidden>
+          <strong id="bulk-count"></strong><label for="bulk-client">Attribuer au client</label>
+          <select id="bulk-client" required></select><button id="bulk-review" type="submit">Vérifier la sélection</button>
+          <button id="bulk-clear" type="button">Décocher tout</button>
+          <a id="bulk-create" href="#reglages" hidden>Créer un client</a>
+        </form>
+        <p id="bulk-status" role="status"></p>
         <div id="check-groups" class="dash-surface"></div>
       </section>
       <section id="global-digest"><div class="section-heading"><h2>Dernier bilan global</h2><a href="#rapport">Préparer un envoi</a></div>
@@ -151,6 +158,12 @@
     </section>
   </main><footer><span id="version"></span><span>Envoi à la demande · Accès IMAP en lecture seule</span></footer>
 </div>
+<dialog id="bulk-dialog" aria-labelledby="bulk-title">
+  <h2 id="bulk-title">Attribution des contrôles</h2><p id="bulk-impact"></p><ul id="bulk-checks"></ul>
+  <p id="bulk-error" role="alert"></p>
+  <form method="dialog"><button id="bulk-cancel" autofocus>Annuler</button>
+    <button id="bulk-save" type="button" class="primary">Appliquer l’attribution</button></form>
+</dialog>
 <dialog id="check-detail" aria-labelledby="detail-title">
   <h2 id="detail-title"></h2><p id="detail-context"></p><section aria-labelledby="detail-mail-title"><h3 id="detail-mail-title">Résumé du mail</h3><div id="detail-mail" role="status"></div></section>
   <details id="assign-client" hidden><summary>Attribuer à un client</summary>

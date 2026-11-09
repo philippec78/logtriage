@@ -312,6 +312,12 @@ function renderRegistry(names) {
   select.replaceChildren(new Option(names.length ? 'Choisis un client' : 'Ajoute un client dans les réglages',''),
     ...names.map(name => new Option(name,name)));
   select.value = names.includes(selected) ? selected : '';
+  const bulkPicker = $('bulk-client'), previous = bulkPicker.value;
+  bulkPicker.replaceChildren(new Option(names.length ? 'Choisis un client' : 'Aucun client enregistré',''),
+    ...names.map(name => new Option(name,name)));
+  bulkPicker.value = names.includes(previous) ? previous : '';
+  $('bulk-review').disabled = !names.length;
+  $('bulk-create').hidden = names.length > 0;
   $('assignment-review').disabled = names.length === 0;
 }
 $('create-client-form').addEventListener('submit', async event => {
@@ -395,7 +401,78 @@ async function showMailDetail(id) {
     if (request === detailRequest) box.textContent = error.message;
   }
 }
+const selectedChecks = new Set();
+let bulkPreview = null;
+function updateBulkBar() {
+  const boxes = Array.from($('check-groups').querySelectorAll('input[data-check]'));
+  const visible = new Set(boxes.map(box => box.value));
+  const visibleSelected = [...visible].filter(id => selectedChecks.has(id)).length;
+  const hidden = selectedChecks.size - visibleSelected;
+  $('bulk-form').hidden = !selectedChecks.size;
+  $('bulk-count').textContent = selectedChecks.size+' contrôle'+(selectedChecks.size === 1 ? ' coché' : 's cochés')+
+    (hidden ? ' (dont '+hidden+' hors filtre)' : '');
+  for (const box of boxes) box.checked = selectedChecks.has(box.value);
+  const all = $('bulk-all');
+  if (all) {
+    all.disabled = !visible.size;
+    all.checked = visible.size > 0 && visibleSelected === visible.size;
+    all.indeterminate = visibleSelected > 0 && visibleSelected < visible.size;
+  }
+}
+$('check-groups').addEventListener('change', event => {
+  const input = event.target;
+  if (!input.matches('input[type=checkbox]')) return;
+  const boxes = input.id === 'bulk-all' ? $('check-groups').querySelectorAll('input[data-check]') : [input];
+  for (const box of boxes) {
+    if (input.checked) selectedChecks.add(box.value);
+    else selectedChecks.delete(box.value);
+  }
+  $('bulk-status').textContent = '';
+  updateBulkBar();
+});
+$('bulk-clear').addEventListener('click', () => { selectedChecks.clear(); updateBulkBar(); });
+$('bulk-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const ids = [...selectedChecks].sort(), client = $('bulk-client').value;
+  if (!ids.length || !client) return;
+  $('bulk-review').disabled = true;
+  try {
+    const result = await api('/api/assignments/preview', {check_ids:ids,client});
+    if (client !== $('bulk-client').value || JSON.stringify(ids) !== JSON.stringify([...selectedChecks].sort())) return;
+    bulkPreview = {check_ids:ids,client,token:result.token};
+    $('bulk-impact').textContent = 'Client destinataire : '+client+' · '+result.affected.length+' contrôle(s) · '+result.count+
+      ' mail(s) dans l’historique. Les prochains messages correspondants seront aussi attribués à ce client.';
+    $('bulk-checks').replaceChildren(...result.affected.map(row => element('li','',clientLabel(row.client)+' — '+row.key.split('|').join(' · '))));
+    $('bulk-error').textContent = '';
+    $('bulk-save').disabled = false;
+    $('bulk-dialog').showModal();
+  } catch (error) { $('bulk-status').textContent = error.message; }
+  finally { $('bulk-review').disabled = !(current?.clients || []).length; }
+});
+$('bulk-save').addEventListener('click', async () => {
+  if (!bulkPreview) return;
+  const payload = bulkPreview;
+  $('bulk-save').disabled = $('bulk-cancel').disabled = true;
+  try {
+    await api('/api/assignments/save',payload);
+    selectedChecks.clear();
+    $('bulk-dialog').close();
+    updateBulkBar();
+    await refresh(true);
+    $('bulk-status').textContent = 'Attribution enregistrée pour '+payload.client+'.';
+  } catch (error) { $('bulk-error').textContent = error.message+' Ferme cet aperçu et vérifie de nouveau la sélection.'; }
+  finally { $('bulk-cancel').disabled = false; }
+});
+$('bulk-dialog').addEventListener('cancel', e => { if ($('bulk-cancel').disabled) e.preventDefault(); });
+$('bulk-dialog').addEventListener('close', () => { bulkPreview = null; });
 function renderChecks(rows) {
+  const available = new Set(rows.map(row => row.bulk_id));
+  for (const id of selectedChecks) {
+    if (!available.has(id)) {
+      selectedChecks.delete(id);
+      $('bulk-status').textContent = 'La liste a changé. Vérifie les contrôles encore cochés.';
+    }
+  }
   rows = rows.filter(matchesScope);
   const counts = {good:0, warn:0, bad:0, other:0};
   rows.forEach(row => counts[checkKind(row)]++);
@@ -420,7 +497,7 @@ function renderChecks(rows) {
   const matching = rows.filter(r => (!filter || checkKind(r) === filter) &&
     (clientLabel(r.client)+' '+r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
   const signature = JSON.stringify([query,filter,matching]);
-  if (list.dataset.rows === signature) return;
+  if (list.dataset.rows === signature) { updateBulkBar(); return; }
   list.dataset.rows = signature;
   const groups = new Map();
   for (const row of matching) {
@@ -430,6 +507,7 @@ function renderChecks(rows) {
   }
   if (!groups.size) {
     list.replaceChildren(element('p','muted',rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle du jour ni incident ouvert dans cette sélection.'));
+    updateBulkBar();
     return;
   }
   const table = element('table','check-table');
@@ -440,6 +518,11 @@ function renderChecks(rows) {
     th.scope = 'col';
     headings.append(th);
   }
+  const all = document.createElement('input');
+  all.type = 'checkbox'; all.id = 'bulk-all';
+  all.title = 'Cocher tous les contrôles affichés';
+  all.setAttribute('aria-label',all.title);
+  headings.firstElementChild.prepend(all);
   for (const domain of [...groups.keys()].sort((a,b)=>a.localeCompare(b,'fr'))) {
     const body = table.createTBody();
     body.className = 'check-group';
@@ -464,7 +547,12 @@ function renderChecks(rows) {
       marker.title = label;
       marker.setAttribute('aria-label',label);
       marker.setAttribute('role','img');
-      name.append(marker,element('span','check-name',row.name));
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      if (row.bulk_id) { box.dataset.check = ''; box.value = row.bulk_id; }
+      else { box.disabled = true; box.title = 'Source du contrôle non identifiable'; }
+      box.setAttribute('aria-label','Cocher '+row.name+' sur '+row.host+' · '+clientLabel(row.client));
+      name.append(box,marker,element('span','check-name',row.name));
       if (row.host !== row.name) name.append(element('small','check-host',row.host));
       tr.insertCell().textContent = typeLabel(row);
       tr.insertCell().textContent = date(row.date);
@@ -494,6 +582,7 @@ function renderChecks(rows) {
     }
   }
   list.replaceChildren(table);
+  updateBulkBar();
 }
 $('check-search').addEventListener('input', () => renderChecks(current?.checks || []));
 $('check-status').addEventListener('change', () => renderChecks(current?.checks || []));

@@ -92,6 +92,35 @@ class WebTests(unittest.TestCase):
         self.assertIn("planificateur", mail["subject"])
         self.assertEqual(self.request("/api/check-detail/absent")[0], 404)
 
+    def test_bulk_assignment_is_atomic_and_limited_to_selected_tasks_on_one_nas(self):
+        self.login()
+        self.request("/api/clients/create", {"name":"Client A"})
+        store = Store(self.directory)
+        try:
+            for name in ("Homes", "Archives", "Photos"):
+                msg = EmailMessage()
+                msg["From"] = "logs@provider.test"
+                msg["Subject"] = "[NAS] Le planificateur de tâches a terminé une tâche planifiée"
+                msg["Date"] = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
+                msg.set_content(f"Tâche : {name}\nÉtat actuel : 0\nDe NAS")
+                store.put(name, "imap:test", analyze(msg.as_bytes(), load_rules()))
+            store.export()
+        finally:
+            store.close()
+        rows = self.request("/api/state")[1]["checks"]
+        ids = [r["bulk_id"] for r in rows if r["name"].lower() != "photos"]
+        self.assertEqual(len(ids), 2)
+        data = {"client":"Client A", "check_ids":ids}
+        status, preview, _ = self.request("/api/assignments/preview", data)
+        self.assertEqual((status,len(preview["affected"]),preview["count"]), (200,2,2))
+        save = {**data,"token":preview["token"]}
+        self.assertEqual(self.request("/api/assignments/save", {**save,"check_ids":[ids[0],"obsolete"]})[0], 400)
+        self.assertEqual(self.request("/api/assignments/save", {**save,"check_ids":[ids[0]]})[0], 400)
+        self.assertEqual({r["client"] for r in self.request("/api/state")[1]["checks"]}, {"provider.test"})
+        self.assertEqual(self.request("/api/assignments/save", save)[0], 200)
+        owners = {r["name"].lower():r["client"] for r in self.request("/api/state")[1]["checks"]}
+        self.assertEqual(owners, {"homes":"Client A","archives":"Client A","photos":"provider.test"})
+
     def test_client_directory_migrates_assignments_and_keeps_clients_without_checks(self):
         from logtriage.private import write_private
         write_private(self.directory / "private/monitoring.json",
