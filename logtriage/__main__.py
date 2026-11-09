@@ -40,11 +40,18 @@ class Config:
     def load(cls):
         host, user = os.environ.get("IMAP_HOST", ""), os.environ.get("IMAP_USER", "")
         if not host or not user or host == "imap.example.com" or user == "logs@example.com":
-            raise ValueError("Renseigne IMAP_HOST et IMAP_USER dans .env")
-        secret = Path(os.environ.get("IMAP_PASSWORD_FILE", "/run/secrets/imap_password"))
-        password = secret.read_text(encoding="utf-8").rstrip("\r\n")
+            raise ValueError("Renseigne les variables IMAP_HOST et IMAP_USER")
+        secret_file = os.environ.get("IMAP_PASSWORD_FILE")
+        if secret_file:
+            # Un fichier explicitement demandé reste prioritaire, sans repli silencieux.
+            password = Path(secret_file).read_text(encoding="utf-8").rstrip("\r\n")
+        elif "IMAP_PASSWORD" in os.environ:
+            # Variables de stack Portainer : pas de fichier secret dans le dépôt Git.
+            password = os.environ["IMAP_PASSWORD"]
+        else:
+            password = Path("/run/secrets/imap_password").read_text(encoding="utf-8").rstrip("\r\n")
         if not password or "\n" in password or "\r" in password:
-            raise ValueError("Le fichier secret doit contenir le mot de passe sur une seule ligne")
+            raise ValueError("Le mot de passe doit être renseigné sur une seule ligne")
         return cls(host, integer("IMAP_PORT", 993), user, password,
                    os.environ.get("IMAP_FOLDER", "INBOX"), integer("INITIAL_LOOKBACK_DAYS", 30),
                    integer("POLL_SECONDS", 300, 10), integer("MAX_MESSAGES_PER_POLL", 500),
