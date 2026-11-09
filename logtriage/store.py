@@ -7,6 +7,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .digest import derive_state, render_digest
+from .private import locked
 
 
 def now():
@@ -36,6 +37,9 @@ class Store:
                 ref TEXT PRIMARY KEY, scope TEXT NOT NULL, sha TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS resolutions (
+                signal TEXT PRIMARY KEY, scope TEXT NOT NULL, task TEXT NOT NULL, resolved_at TEXT NOT NULL
+            );
         """)
 
     def close(self):
@@ -68,7 +72,11 @@ class Store:
             self.db.execute("INSERT OR IGNORE INTO refs VALUES (?,?,?)", (reference, scope, result["sha256"]))
         return inserted
 
-    def export(self, tz="Europe/Zurich", report_config=None):
+    def export(self, tz="Europe/Zurich", report_config=None, resolve_signal=None):
+        with locked(self.directory / "export.lock"):
+            return self._export(tz, report_config, resolve_signal)
+
+    def _export(self, tz, report_config, resolve_signal):
         rows = self.db.execute("SELECT scope,sha,result,imported_at FROM messages").fetchall()
         messages = []
         for scope, sha, payload, imported in rows:
@@ -80,11 +88,23 @@ class Store:
         messages.sort(key=lambda r: (r["date"], r["sha256"]))
         # Recalcul chronologique : un email ancien importé tardivement ne rouvre pas
         # un incident dont une réussite plus récente est déjà connue.
-        tasks, observations = derive_state(messages)
+        resolutions = dict(self.db.execute("SELECT signal,resolved_at FROM resolutions"))
+        tasks, observations = derive_state(messages, resolutions)
+        if resolve_signal is not None and resolve_signal not in resolutions:
+            task = next((t for t in tasks.values() if t["state"] in ("open", "warning")
+                         and t["signal_id"] == resolve_signal), None)
+            if task is None:
+                raise ValueError("Cet incident a changé. Actualise le bilan avant de le valider.")
+            at = now()
+            with self.db:
+                self.db.execute("INSERT INTO resolutions VALUES (?,?,?,?)", (resolve_signal, task["scope"], task["key"], at))
+            resolutions[resolve_signal] = at
+            tasks, observations = derive_state(messages, resolutions)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))
         summary = {"generated_at": now(), "mode": "read_only", "total_messages": len(messages),
                    "categories": counts, "open_tasks": sum(t["state"] == "open" for t in tasks.values()),
+                   "resolution_count": len(resolutions),
                    "observation_groups": len(observations), "expected_reports_enabled": False,
                    "recognized_messages": sum(bool(m.get("recognized")) for m in messages),
                    "unrecognized_messages": sum(not m.get("recognized") for m in messages),
@@ -92,6 +112,12 @@ class Store:
                    "outgoing_notifications_enabled": False}
         atomic_json(export / "messages.json", messages)
         atomic_json(export / "tasks.json", list(tasks.values()))
+        pending = [{"id": t["signal_id"], "summary": t.get("summary") or t["key"],
+                    "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
+                   if t["state"] in ("open", "warning")]
+        pending.sort(key=lambda t: t["date"], reverse=True)
+        pending.sort(key=lambda t: t["severity"] != "open")
+        atomic_json(export / "open-incidents.json", pending)
         atomic_json(export / "observations.json", list(observations.values()))
         atomic_json(export / "summary.json", summary)
         local_day = datetime.now(ZoneInfo(tz)).date().isoformat()

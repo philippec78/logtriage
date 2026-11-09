@@ -130,6 +130,35 @@ class PersistenceTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_manual_closure_is_scoped_and_a_fresh_signal_reopens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = analyze(mail("La tâche de sauvegarde VM sur NAS a échoué",
+                                "La tâche de sauvegarde VM a rencontré une erreur.\nDe NAS"), load_rules())
+            store = Store(tmp)
+            for scope in ("first", "second"):
+                store.put(scope, scope, base)
+            store.export()
+            def tasks():
+                return {t["scope"]: t for t in json.loads((Path(tmp) / "exports/tasks.json").read_text())}
+            signal = tasks()["first"]["signal_id"]
+            store.export(resolve_signal=signal)
+            store.close()
+            store = Store(tmp)
+            try:
+                store.export()
+                self.assertEqual(tasks()["first"]["resolved_by"], "manual")
+                self.assertEqual(tasks()["second"]["state"], "open")
+                store.put("new", "first", {**base, "date": "2026-11-15T00:00:00+00:00", "sha256": "next"})
+                store.export(resolve_signal=signal)
+                self.assertEqual(tasks()["first"]["state"], "open")
+                self.assertEqual(tasks()["first"]["active_occurrences"], 1)
+                current = tasks()["first"]["signal_id"]
+                store.put("new2", "first", {**base, "date": "2026-11-15T00:00:00+00:00", "sha256": "another"})
+                with self.assertRaisesRegex(ValueError, "a changé"):
+                    store.export(resolve_signal=current)
+            finally:
+                store.close()
+
     def test_completion_does_not_resolve_and_scopes_are_separate(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(tmp)

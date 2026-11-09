@@ -1,6 +1,8 @@
 """Prévisualisation figée puis envoi explicite, sans écriture dans la boîte IMAP."""
 import hashlib
 import json
+import os
+import re
 import secrets
 import threading
 from datetime import datetime, timezone
@@ -9,10 +11,10 @@ from pathlib import Path
 from .ai_report import ReportAgent, annotate
 from .digest import render_digest
 from .openai_http import OpenAIError
-from .private import private_dir, read_json, write_private
+from .private import locked, private_dir, read_json, write_private
 from .report import prepare_report, send_report, smtp_credentials
 from .settings import load_settings
-from .store import atomic_json
+from .store import Store, atomic_json
 from .unknown_review import review_unknown
 
 ERRORS = {"usage_limit": "La limite d’utilisation ChatGPT est atteinte. Gère ton utilisation dans ChatGPT ou utilise le bilan classique.",
@@ -71,19 +73,33 @@ class WebReports:
     def preview(self, use_ai):
         self._background(("preview", lambda: self._preview(use_ai)))
 
+    def resolve(self, signal):
+        if not isinstance(signal, str) or not re.fullmatch(r"[0-9a-f]{64}", signal):
+            raise ValueError("Sélectionne un incident ouvert.")
+        if not self.lock.acquire(blocking=False):
+            raise ValueError("Un rapport est en cours de préparation ou d’envoi. Réessaie ensuite.")
+        try:
+            store = Store(self.directory)
+            try:
+                store.export(os.environ.get("TZ", "Europe/Zurich"), load_settings(self.directory), resolve_signal=signal)
+            finally:
+                store.close()
+        finally:
+            self.lock.release()
+
     def _preview(self, use_ai):
         settings = load_settings(self.directory)
         if not settings["recipient"] or not settings["sender"]:
             raise ValueError("Renseigne le destinataire et l’expéditeur dans les réglages.")
         export = self.directory / "exports"
-        summary = read_json(export / "summary.json")
-        messages = read_json(export / "messages.json", [])
-        tasks = read_json(export / "tasks.json", [])
-        observations = read_json(export / "observations.json", [])
+        with locked(self.directory / "export.lock"):
+            summary = read_json(export / "summary.json")
+            messages = read_json(export / "messages.json", [])
+            tasks = read_json(export / "tasks.json", [])
+            observations = read_json(export / "observations.json", [])
         if not summary or not summary.get("total_messages"):
             raise ValueError("Attends la première collecte avant de préparer un rapport.")
         # Le rapport est régénéré à partir des exports disponibles, sans lancer de collecte concurrente.
-        import os
         now = datetime.now(timezone.utc)
         digest_args = (summary, messages, tasks, observations, os.environ.get("TZ", "Europe/Zurich"), settings, now)
         report = render_digest(*digest_args)
@@ -109,7 +125,8 @@ class WebReports:
         msg = prepare_report(self.directory, settings["recipient"], settings["sender"], report_text=report)
         write_private(self.path, {"id": secrets.token_urlsafe(24), "created_at": datetime.now(timezone.utc).isoformat(),
             "recipient": settings["recipient"], "sender": settings["sender"], "subject": str(msg["Subject"]),
-            "body": msg.get_content(), "ai": ai, "settings_digest": settings_digest(settings), "delivery": "not_sent"})
+            "body": msg.get_content(), "ai": ai, "settings_digest": settings_digest(settings),
+            "resolution_count": summary.get("resolution_count", 0), "delivery": "not_sent"})
 
     def send(self, identity):
         preview = read_json(self.path, {})
@@ -122,6 +139,9 @@ class WebReports:
         from email.utils import format_datetime, make_msgid
         preview = read_json(self.path, {})
         settings = load_settings(self.directory)
+        summary = read_json(self.directory / "exports/summary.json", {})
+        if preview.get("resolution_count", 0) != summary.get("resolution_count", 0):
+            raise ValueError("Un incident a été validé depuis cet aperçu. Prépare un nouveau rapport.")
         if preview.get("id") != identity or preview.get("delivery") != "not_sent" or preview.get("settings_digest") != settings_digest(settings):
             raise ValueError("Les réglages ou l’aperçu ont changé. Prépare à nouveau le rapport.")
         created = datetime.fromisoformat(preview["created_at"])

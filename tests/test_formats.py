@@ -244,7 +244,7 @@ class DigestTests(unittest.TestCase):
         messages = [parse(f"Unknown format {i}", "Unstructured data") for i in range(3)]
         text = render_digest({"total_messages": 3}, messages, [], [], current_time=datetime(2026, 11, 9, 11, tzinfo=timezone.utc))
         self.assertEqual(text.count("À VÉRIFIER —"), 1)
-        self.assertIn("3 rapport(s)", text)
+        self.assertIn("3 signaux", text)
 
 
 if __name__ == "__main__":

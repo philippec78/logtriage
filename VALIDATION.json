@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 65,
-    "passed": 65,
+    "executed": 68,
+    "passed": 68,
     "real_imap_connection": false
   },
   "sample": {
@@ -41,6 +41,7 @@
     "live_chatgpt_authorization": "requires_user_consent_not_tested",
     "oauth": "PKCE, signed JWT verification, scope checks and serialized rotating refresh tested with synthetic credentials",
     "tls": "private certificate and SAN tested",
-    "unknown_mail_review": "Double activation, lecture IMAP seule, filtrage des extraits, vérification des citations et repli testés avec un modèle simulé"
+    "unknown_mail_review": "Double activation, lecture IMAP seule, filtrage des extraits, vérification des citations et repli testés avec un modèle simulé",
+    "manual_resolution": "Validation sur données fictives depuis le navigateur, persistance, réouverture et refus d’un aperçu périmé vérifiés"
   }
 }

@@ -150,6 +150,7 @@ class WebApplication:
         return {"version": __version__, "settings": load_settings(self.directory),
                 "status": read_json(self.directory / "status.json"),
                 "summary": read_json(self.directory / "exports/summary.json"),
+                "incidents": read_json(self.directory / "exports/open-incidents.json", []),
                 "latest_digest": (self.directory / "exports/bilan.txt").read_text(encoding="utf-8") if (self.directory / "exports/bilan.txt").exists() else "",
                 "chatgpt": self.chatgpt.state(), "models": self.chatgpt.cached_models(),
                 "report": self.reports.state(), "mailbox": {"host": os.environ.get("IMAP_HOST", ""),
@@ -253,6 +254,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True}, extra={"Set-Cookie": "logtriage=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + ("; Secure" if self.app.secure else "")})
             if path == "/api/settings":
                 save_settings(self.app.directory, values)
+                return self.reply(200, {"ok": True})
+            if path == "/api/resolve":
+                self.app.reports.resolve(values.get("id"))
                 return self.reply(200, {"ok": True})
             if path == "/api/chatgpt/connect":
                 helper = self.app.chatgpt.helper(self.app.public_url, self.app.certificate, values.get("profile"))

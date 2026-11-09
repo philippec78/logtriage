@@ -153,6 +153,25 @@ class WebTests(unittest.TestCase):
             self.assertEqual(smtp.call_args.args[0].get_content(), preview["body"])
             self.assertEqual(self.request("/api/send", {"id": preview["id"]})[0], 400)
 
+    def test_manual_resolution_updates_bilan_preview_and_blocks_old_send(self):
+        self.fixture()
+        self.login()
+        item = self.request("/api/state")[1]["incidents"][0]
+        self.app.reports._preview(False)
+        old_id = self.app.reports.state()["preview"]["id"]
+        self.assertEqual(self.request("/api/resolve", {"id": item["id"]}, csrf=False)[0], 403)
+        self.assertEqual(self.request("/api/resolve", {"id": "0" * 64})[0], 400)
+        self.assertEqual(self.request("/api/resolve", {"id": item["id"]})[0], 200)
+        self.assertEqual(self.request("/api/resolve", {"id": item["id"]})[0], 200)
+        state = self.request("/api/state")[1]
+        self.assertEqual(state["incidents"], [])
+        self.assertEqual(state["summary"]["resolution_count"], 1)
+        self.assertIn("Validé manuellement", state["latest_digest"])
+        with self.assertRaisesRegex(ValueError, "depuis cet aperçu"):
+            self.app.reports._send(old_id)
+        self.app.reports._preview(False)
+        self.assertIn("Validé manuellement", self.app.reports.state()["preview"]["body"])
+
     def test_static_pages_never_serve_private_files(self):
         self.assertEqual(self.request("/")[0], 200)
         self.assertIn(b"Envoyer un rapport", self.request("/")[1])

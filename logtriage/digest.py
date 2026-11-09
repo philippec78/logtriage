@@ -1,53 +1,70 @@
 """État chronologique et bilan destiné à la lecture humaine."""
 import collections
+import hashlib
+import itertools
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 
-def derive_state(messages):
+def derive_state(messages, resolutions=None):
     tasks, observations = {}, {}
-    for message in sorted(messages, key=lambda m: (m["date"], m["sha256"])):
-        events = ([message] if message.get("task_key") else []) + message.get("task_events", [])
-        for event in events:
-            identity = message["scope"] + "|" + event["task_key"]
-            task = tasks.setdefault(identity, {
-                "key": event["task_key"], "scope": message["scope"], "state": "unknown",
-                "failures": [], "last_failure": None, "last_success": None,
-                "active_occurrences": 0, "last_problem": None, "resolved_at": None})
-            task.update(last_message_date=message["date"], latest_category=message["category"],
-                        format=event.get("format", message.get("format", "unknown")))
-            execution = event["execution"]
-            if execution in ("failure", "warning"):
-                task["state"] = "open" if execution == "failure" or task["state"] == "open" else "warning"
-                task["active_occurrences"] += 1
-                task["last_problem"] = message["date"]
-                task["resolved_at"] = None
-                task["summary"] = event.get("summary", message["summary"])
-                task["evidence"] = event.get("evidence", message["evidence"])
-                if execution == "failure":
-                    task["last_failure"] = message["date"]
-                    task["failures"].append({"date": message["date"], "message_sha256": message["sha256"],
-                                              "evidence": task["evidence"], "signature": message.get("error_signature")})
-            elif execution == "success":
-                # Un succès à la même seconde qu'un problème ne l'efface pas.
-                if task["state"] in ("open", "warning") and message["date"] > task["last_problem"]:
-                    task["state"] = "resolved"
-                    task["resolved_at"] = message["date"]
-                    task["active_occurrences"] = 0
+    resolutions = resolutions or {}
+    ordered = sorted(messages, key=lambda m: (m["date"], m["sha256"]))
+    for date, batch in itertools.groupby(ordered, key=lambda m: m["date"]):
+        signals = collections.defaultdict(set)
+        for message in batch:
+            events = ([message] if message.get("task_key") else []) + message.get("task_events", [])
+            for event in events:
+                identity = message["scope"] + "|" + event["task_key"]
+                task = tasks.setdefault(identity, {
+                    "key": event["task_key"], "scope": message["scope"], "state": "unknown",
+                    "failures": [], "last_failure": None, "last_success": None,
+                    "active_occurrences": 0, "last_problem": None, "resolved_at": None})
+                task.update(last_message_date=message["date"], latest_category=message["category"],
+                            format=event.get("format", message.get("format", "unknown")))
+                execution = event["execution"]
+                if execution in ("failure", "warning"):
+                    task["state"] = "open" if execution == "failure" or task["state"] == "open" else "warning"
+                    task["active_occurrences"] += 1
+                    task["last_problem"] = message["date"]
+                    task["resolved_at"] = None
+                    task.pop("resolved_by", None)
+                    signals[identity].add(message["sha256"])
                     task["summary"] = event.get("summary", message["summary"])
-                elif not task["last_problem"]:
-                    task["state"] = "ok"
-                    task["summary"] = event.get("summary", message["summary"])
-                task["last_success"] = message["date"]
-            task["message_sha256"] = message["sha256"]
-        for item in message["observations"]:
-            identity = message["scope"] + "|" + item["key"]
-            previous = observations.get(identity)
-            observations[identity] = {**item, "scope": message["scope"],
-                                       "first_seen": previous["first_seen"] if previous else message["date"],
-                                       "last_seen": message["date"], "message_sha256": message["sha256"],
-                                       "reports_seen": (previous["reports_seen"] if previous else 0) + 1}
+                    task["evidence"] = event.get("evidence", message["evidence"])
+                    if execution == "failure":
+                        task["last_failure"] = message["date"]
+                        task["failures"].append({"date": message["date"], "message_sha256": message["sha256"],
+                                                  "evidence": task["evidence"], "signature": message.get("error_signature")})
+                elif execution == "success":
+                    # Un succès à la même seconde qu'un problème ne l'efface pas.
+                    if task["state"] in ("open", "warning") and message["date"] > task["last_problem"]:
+                        task["state"] = "resolved"
+                        task["resolved_by"] = "logs"
+                        task["resolved_at"] = message["date"]
+                        task["active_occurrences"] = 0
+                        task["summary"] = event.get("summary", message["summary"])
+                    elif not task["last_problem"]:
+                        task["state"] = "ok"
+                        task["summary"] = event.get("summary", message["summary"])
+                    task["last_success"] = message["date"]
+                task["message_sha256"] = message["sha256"]
+            for item in message["observations"]:
+                identity = message["scope"] + "|" + item["key"]
+                previous = observations.get(identity)
+                observations[identity] = {**item, "scope": message["scope"],
+                                           "first_seen": previous["first_seen"] if previous else message["date"],
+                                           "last_seen": message["date"], "message_sha256": message["sha256"],
+                                           "reports_seen": (previous["reports_seen"] if previous else 0) + 1}
+        for identity, hashes in signals.items():
+            task = tasks[identity]
+            source = json.dumps([task["scope"], task["key"], date, sorted(hashes)])
+            token = hashlib.sha256(source.encode()).hexdigest()
+            task["signal_id"] = token
+            if token in resolutions:
+                task.update(state="resolved", resolved_at=resolutions[token], resolved_by="manual", active_occurrences=0)
     return tasks, observations
 
 
@@ -133,9 +150,19 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                                                     "date": m["date"], "severity": 2,
                                                     "occurrences": count, "resources": set()}
     ordered = sorted(groups.values(), key=lambda g: (g["severity"], -datetime.fromisoformat(g["date"]).timestamp()))
+    recovered = sorted((t for t in tasks if t["state"] == "resolved" and t["resolved_at"]
+                        and current_time - timedelta(hours=24) <= datetime.fromisoformat(t["resolved_at"]) <= current_time),
+                       key=lambda t: t["resolved_at"], reverse=True)
+    def count(n, singular, plural):
+        return f"{n} {singular if n == 1 else plural}"
+
     lines = ["Bilan des serveurs — " + current_time.astimezone(zone).strftime("%d.%m.%Y à %H:%M %Z"),
-             f"{len(ordered)} point(s) à examiner sur les dernières {hours} heures.", ""]
+             f"{hours} h de suivi · " + count(len(recent), "email reçu", "emails reçus"), "",
+             count(len(ordered), "point récent à examiner", "points récents à examiner") + " · "
+             + count(len(older), "problème antérieur ouvert", "problèmes antérieurs ouverts") + " · "
+             + count(len(recovered), "résolution en 24 h", "résolutions en 24 h")]
     if ordered:
+        lines.extend(["", "À EXAMINER EN PRIORITÉ"])
         hidden = 0
         for index, group in enumerate(ordered):
             if index >= maximum and not group["resources"] and "ai_source" not in group:
@@ -147,33 +174,28 @@ def render_digest(summary, messages, tasks, observations, tz="Europe/Zurich", co
                 names = ", ".join(sorted(readable(key.split("|", 2)[-1]) for key in group["resources"]))
                 line += f" ({len(group['resources'])} ressources concernées) — {names}"
             when = datetime.fromisoformat(group["date"]).astimezone(zone).strftime("%d.%m à %H:%M")
-            lines += [line, f"  Dernier signal : {when} ; {group['occurrences']} rapport(s) regroupé(s)."]
+            frequency = count(group["occurrences"], "signal", "signaux")
+            lines += ["", line, f"  {when} · {frequency}"]
             if "ai_source" in group:
                 lines.append(f"  Repéré par l’IA dans « {group['ai_source']} » — extrait : « {group['quote']} ».")
         if hidden:
             lines.append(f"{hidden} autre(s) point(s) : détail conservé dans les exports locaux.")
-    else:
-        lines.append("Aucun échec ni avertissement récent nécessitant une vérification dans les rapports analysés.")
+
     if older:
-        lines += ["", f"PROBLÈMES TOUJOURS OUVERTS — {len(older)} sans nouveau signal dans la période"]
-        for task in sorted(older, key=lambda t: t["last_problem"] or "", reverse=True):
+        lines += ["", "PROBLÈMES TOUJOURS OUVERTS"]
+        for task in sorted(older, key=lambda t: (t["state"] != "open", t["key"])):
             label = "ÉCHEC" if task["state"] == "open" else "ATTENTION"
             when = local_stamp(task["last_problem"], zone) if task["last_problem"] else "date inconnue"
             lines.append(f"- {label} — {readable(task.get('summary') or task['key'])} (dernier signal le {when})")
-    recovery_start = current_time - timedelta(hours=24)
-    recovered = sorted((t for t in tasks if t["state"] == "resolved" and t["resolved_at"]
-                        and recovery_start <= datetime.fromisoformat(t["resolved_at"]) <= current_time),
-                       key=lambda t: t["resolved_at"], reverse=True)
     if recovered:
         lines += ["", "RÉTABLIS DANS LES DERNIÈRES 24 H"]
-        for task in recovered[:5]:
-            lines.append(f"- {readable(task.get('summary') or task['key'])} ({local_stamp(task['resolved_at'], zone)})")
-        if len(recovered) > 5:
-            lines.append(f"Et {len(recovered) - 5} autre(s) rétablissement(s) confirmé(s).")
-    lines += ["", f"Couverture : {summary['total_messages']} emails analysés ; {len(recent)} dans cette période."]
+        for task in recovered:
+            origin = "Validé manuellement" if task.get("resolved_by") == "manual" else "Confirmé par les logs"
+            lines.append(f"- {readable(task.get('summary') or task['key'])} — {origin} le {local_stamp(task['resolved_at'], zone)}")
+
     unreadable = sum(bool(m["coverage_warnings"]) for m in recent)
     if unreadable:
         lines.append(f"Lecture à compléter : {unreadable} rapport(s) comportent des données incomplètes ou des pièces jointes non analysables.")
-    lines.append("Les réussites habituelles et les notifications sans incident sont conservées dans l’historique.")
-    lines.append("Les détections de sécurité sont à vérifier et ne prouvent pas, seules, une compromission.")
+    if any(g.get("security") for g in ordered):
+        lines.extend(["", "Les détections de sécurité nécessitent une vérification."])
     return "\n".join(lines) + "\n"

@@ -27,6 +27,45 @@ function settings(state) {
   const selected = state.chatgpt.active;
   if(state.chatgpt.connected && selected && !localStorage.getItem('logtriage-welcome-'+selected)) { $('plan-welcome').showModal(); localStorage.setItem('logtriage-welcome-'+selected,'1'); }
 }
+function showReport(container, body) {
+  if (container.dataset.rendered === body) return;
+  container.dataset.rendered = body;
+  const fragment = document.createDocumentFragment();
+  const headings = ['À EXAMINER EN PRIORITÉ', 'PROBLÈMES TOUJOURS OUVERTS', 'RÉTABLIS DANS LES DERNIÈRES 24 H'];
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const heading = headings.includes(line);
+    const item = document.createElement(heading ? 'h3' : 'p');
+    item.textContent = heading ? line[0] + line.slice(1).toLocaleLowerCase('fr') : line.replace(/^- /, '');
+    if (line.startsWith('- ')) item.className = 'report-item';
+    else if (raw.startsWith('  ')) item.className = 'report-detail';
+    fragment.append(item);
+  }
+  container.replaceChildren(fragment);
+}
+function incidentSelection() {
+  const selected = current?.incidents?.find(row => row.id === $('incident-picker').value);
+  $('resolve-incident').disabled = !selected || busy || current?.report?.job?.state === 'running';
+  $('incident-detail').textContent = selected ? selected.summary + ' · Dernier signal le ' + date(selected.date) : '';
+}
+function renderIncidents(rows) {
+  const picker = $('incident-picker');
+  const fingerprint = JSON.stringify(rows);
+  if (picker.dataset.rows !== fingerprint) {
+    const previous = picker.value;
+    picker.replaceChildren(new Option(rows.length ? 'Choisis un incident' : 'Aucun incident ouvert', ''));
+    for (const row of rows) {
+      const prefix = row.severity === 'open' ? 'Échec' : 'Avertissement';
+      picker.add(new Option(prefix + ' — ' + row.summary, row.id));
+    }
+    if (rows.some(row => row.id === previous)) picker.value = previous;
+    picker.dataset.rows = fingerprint;
+  }
+  picker.disabled = !rows.length;
+  $('incident-count').textContent = '(' + rows.length + ')';
+  incidentSelection();
+}
 function render(state) {
   current=state; csrf=state.csrf;
   $('login-view').hidden=true; $('application').hidden=false;
@@ -36,7 +75,8 @@ function render(state) {
   $('collection-status').textContent=!state.status ? 'La première collecte n’est pas encore disponible.' : stale ? 'La dernière collecte est ancienne. Vérifie le service avant de te fier au bilan.' : status !== 'ok' ? 'Collecte à vérifier : le bilan reflète les données disponibles.' : collection?.pending ? `Collecte en cours : ${collection.pending} emails restent à analyser.` : 'Collecte à jour · boîte consultée en lecture seule';
   $('message-count').textContent=state.summary?.total_messages?.toLocaleString('fr-CH') ?? '—';
   $('unknown-count').textContent=state.summary?.unrecognized_messages ?? '—'; $('last-collection').textContent=date(state.status?.last_cycle_at);
-  $('latest-digest').textContent=state.latest_digest || 'Le bilan apparaîtra après la première collecte.';
+  showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
+  renderIncidents(state.incidents || []);
   settings(state);
   const preview=state.report.preview, job=state.report.job, running=job.state==='running';
   $('prepare').disabled=running || busy; $('prepare').textContent=running&&job.kind==='preview'?'Préparation en cours…':'Préparer le rapport'; $('prepare').setAttribute('aria-busy',String(running&&job.kind==='preview'));
@@ -44,12 +84,14 @@ function render(state) {
   $('ai-plan-status').textContent=state.chatgpt.connected?'Utilise ton abonnement ChatGPT.':'Connecte ChatGPT dans les réglages pour ajouter une analyse.';
   $('mail-headers').hidden=!preview; $('report-preview').classList.toggle('empty',!preview);
   $('preview-date').textContent=preview?'Préparé le '+date(preview.created_at):'';
-  $('report-preview').textContent=preview?.body || 'Aucun rapport préparé. Choisis le type de bilan, puis prépare l’aperçu.';
+  showReport($('report-preview'), preview?.body || 'Choisis le type de bilan, puis prépare l’aperçu.');
   $('preview-to').textContent=preview?.recipient||''; $('preview-subject').textContent=preview?.subject||'';
   $('ai-warning').hidden=!preview?.ai?.message; $('ai-warning').textContent=preview?.ai?.message||'';
-  $('send').disabled=!preview || running || preview.delivery!=='not_sent' || busy;
+  const stalePreview = preview && (preview.resolution_count || 0) !== (state.summary?.resolution_count || 0);
+  $('send').disabled=!preview || stalePreview || running || preview.delivery!=='not_sent' || busy;
   $('send').textContent=running&&job.kind==='send'?'Envoi en cours…':'Envoyer cet aperçu';
   $('delivery-status').textContent=preview?.delivery_message || (preview?.ai?.state==='completed'?'Analyse ChatGPT ajoutée. Aucun envoi effectué.':'Aucun envoi effectué depuis cet aperçu.');
+  if (stalePreview && preview.delivery === 'not_sent') $('delivery-status').textContent = 'Un incident a été validé. Prépare un nouvel aperçu pour l’envoyer.';
   $('last-send').textContent=state.report.last_send?'Dernière acceptation SMTP : '+date(state.report.last_send.accepted_at)+' pour '+state.report.last_send.recipient:'';
   if(job.state==='error') notice(job.message,true);
   view();
@@ -58,6 +100,19 @@ async function refresh(quiet = false) { try {render(await api('/api/state'));} c
 async function action(button, fn) { if(busy) return; busy=true; button.disabled=true; button.setAttribute('aria-busy','true'); notice(''); try{await fn();}catch(error){notice(error.message,true);}finally{busy=false;button.disabled=false;button.removeAttribute('aria-busy');await refresh(true);} }
 $('login-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;$('login-error').textContent='';try{const result=await api('/api/login',{username:$('username').value,password:$('password').value});csrf=result.csrf;$('password').value='';await refresh();}catch(error){$('login-error').textContent=error.message;}finally{button.disabled=false;}});
 $('logout').addEventListener('click',()=>action($('logout'),async()=>{await api('/api/logout',{});current=null;settingsDirty=false;settingsLoaded=false;$('application').hidden=true;$('login-view').hidden=false;}));
+$('incident-picker').addEventListener('change', incidentSelection);
+$('manage-incidents').addEventListener('click', () => {
+  $('incident-panel').open = true;
+  requestAnimationFrame(() => $('incident-picker').focus());
+});
+$('resolve-incident').addEventListener('click', () => {
+  const selected = current.incidents.find(row => row.id === $('incident-picker').value);
+  if (!selected) return;
+  action($('resolve-incident'), async () => {
+    await api('/api/resolve', {id: selected.id});
+    $('resolution-status').textContent = 'Résolution enregistrée pour ' + selected.summary;
+  });
+});
 $('refresh').addEventListener('click',()=>refresh());
 $('settings-form').addEventListener('input',()=>{settingsDirty=true;$('settings-status').textContent='Modifications non enregistrées.';});
 $('settings-form').addEventListener('submit',event=>{event.preventDefault();action($('save-settings'),async()=>{const body={};for(const [key,value] of Object.entries(current.settings)){const input=$(key);body[key]=input.type==='checkbox'?input.checked:typeof value==='number'?Number(input.value):input.value;}await api('/api/settings',body);settingsDirty=false;$('settings-status').textContent='Réglages enregistrés.';});});

@@ -45,10 +45,12 @@ def validate_notes(text, facts):
 
 def annotate(report, notes):
     lines = []
+    displayed = 0
     for line in report.splitlines():
         lines.append(line)
         identity = hashlib.sha256(line.encode()).hexdigest()[:16]
-        if identity in notes:
+        if identity in notes and displayed < 3:
+            displayed += 1
             lines.append("  Vérification proposée par l’IA : " + notes[identity])
     return "\n".join(lines) + "\n"
 
@@ -112,7 +114,7 @@ class ReportAgent:
                         "N’exécute aucune action et ne demande aucun secret. Ne change ni les faits, ni les compteurs, ni les statuts du bilan. "
                         "Ne déduis pas une compromission d’une alerte, ni une panne de l’absence d’un message. "
                         "Distingue toujours une hypothèse d’une cause prouvée. Une vérification proposée doit être non destructive. "
-                        "Ne répète pas le titre d’une alerte et n’ajoute pas de conseils génériques. Tu peux omettre une note sans valeur ajoutée. "
+                        "Sélectionne au plus trois contrôles concrets et prioritaires pour tout le rapport. Ne répète pas le titre d’une alerte et n’ajoute pas de conseils génériques. Tu peux omettre une note sans valeur ajoutée. "
                         'Réponds uniquement par {"notes":[{"id":"identifiant du bilan","note":"vérification en 400 caractères maximum"}]}.')
         history = [{"role": "user", "content": json.dumps({"request": "Prépare les vérifications pertinentes pour ce bilan.",
                     "facts": self.ai_facts, "editorial_preferences": redact(self.instructions)}, ensure_ascii=False)}]

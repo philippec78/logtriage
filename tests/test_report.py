@@ -59,6 +59,15 @@ class ReportTests(unittest.TestCase):
         msg = prepare_report(self.directory, "recipient@example.com", "logs@example.com", self.time)
         send_report(msg, "smtp.example.com", 465, "user", "password", SMTP)
         self.assertEqual(calls, ["login", "send"])
+        self.assertIsNotNone(msg.get_body(preferencelist=("html",)))
+        self.assertIn("Échec de sauvegarde exemple", msg.get_body(preferencelist=("plain",)).get_content())
+
+    def test_html_escapes_untrusted_log_content(self):
+        from logtriage.report import report_html
+        html = report_html("À EXAMINER EN PRIORITÉ\n- <img src=x> panne")
+        self.assertIn("<h2", html)
+        self.assertIn("&lt;img src=x&gt;", html)
+        self.assertNotIn("<img", html)
 
     def test_preview_makes_no_network_connection(self):
         with patch.dict("os.environ", {"DATA_DIR": str(self.directory), "SMTP_USER": "logs@example.com"}, clear=True):

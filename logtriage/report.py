@@ -1,4 +1,6 @@
 """Envoi ponctuel d’un bilan existant. Aucun envoi depuis le collecteur."""
+from html import escape
+
 import argparse
 import json
 import os
@@ -38,7 +40,7 @@ def prepare_report(directory, recipient, sender, current_time=None, report_text=
     if generated.tzinfo is None or cycle.tzinfo is None:
         raise ValueError("Horodatage du rapport invalide")
     warnings = []
-    age = (current_time - generated).total_seconds()
+    age = (current_time - min(generated, cycle)).total_seconds()
     if age > max(900, int(status.get("poll_seconds", 300)) * 3):
         warnings.append("ATTENTION : ce bilan est ancien ; vérifie la collecte dans Portainer.")
     if status.get("state") != "ok":
@@ -47,9 +49,7 @@ def prepare_report(directory, recipient, sender, current_time=None, report_text=
     if pending:
         warnings.append(f"ATTENTION : {pending} message(s) restent en attente d’analyse.")
     zone = ZoneInfo(os.environ.get("TZ", "Europe/Zurich"))
-    header = ["Rapport ponctuel des emails de logs", "",
-              f"Bilan généré le {generated.astimezone(zone):%d.%m.%Y à %H:%M:%S %Z}.",
-              *warnings, ""]
+    header = warnings + [""] if warnings else []
     report = report.replace("Mode : lecture seule, aucun envoi",
                             "Mode : boîte consultée en lecture seule ; rapport envoyé à la demande.")
     msg = EmailMessage()
@@ -57,7 +57,7 @@ def prepare_report(directory, recipient, sender, current_time=None, report_text=
     msg["Subject"] = f"Logs serveurs — bilan du {current_time.astimezone(zone):%d.%m.%Y à %H:%M}"
     msg["Date"], msg["Message-ID"] = format_datetime(current_time), make_msgid(domain=sender.split("@")[1])
     msg["Auto-Submitted"] = "auto-generated"
-    msg.set_content("\n".join(header) + "\n" + report)
+    msg.set_content("\n".join([*header, report]))
     return msg
 
 
@@ -74,10 +74,30 @@ def smtp_credentials(use_imap):
     return user, password
 
 
+def report_html(body):
+    parts = ['<html lang="fr"><body style="font:16px/1.55 Helvetica,Arial,sans-serif;color:#202623">',
+             '<main style="max-width:760px;margin:auto;padding:16px">']
+    for raw in body.splitlines():
+        line = escape(raw.strip())
+        if not line:
+            continue
+        if line.startswith("Bilan des serveurs —"):
+            parts.append(f'<h1 style="font-size:22px">{line}</h1>')
+        elif line in ("À EXAMINER EN PRIORITÉ", "PROBLÈMES TOUJOURS OUVERTS", "RÉTABLIS DANS LES DERNIÈRES 24 H"):
+            parts.append(f'<h2 style="font-size:18px;margin:24px 0 8px;border-bottom:1px solid #aabbb2">{line.capitalize()}</h2>')
+        elif line.startswith("- "):
+            parts.append(f'<p style="margin:12px 0 0"><strong>{line[2:]}</strong></p>')
+        else:
+            parts.append(f'<p style="margin:3px 0">{line}</p>')
+    return "".join([*parts, "</main></body></html>"])
+
+
 def send_report(msg, host, port, username, password, factory=None):
     if not host or not 1 <= port <= 65535:
         raise ValueError("Serveur ou port SMTP invalide")
     factory = factory or smtplib.SMTP_SSL
+    if not msg.is_multipart():
+        msg.add_alternative(report_html(msg.get_content()), subtype="html")
     with factory(host, port, timeout=45, context=ssl.create_default_context()) as smtp:
         smtp.login(username, password)
         refused = smtp.send_message(msg, from_addr=str(msg["From"]), to_addrs=[str(msg["To"])])
