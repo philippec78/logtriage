@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 33,
-    "passed": 33,
+    "executed": 36,
+    "passed": 36,
     "real_imap_connection": false
   },
   "sample": {
@@ -19,11 +19,18 @@
     "second_import_new_messages": 0
   },
   "compose_yaml": "Portainer variable-based configuration and local secret-file configuration parsed and checked",
-  "docker_image_build": "not_run_docker_unavailable",
-  "docker_container_start": "not_run_docker_unavailable",
+  "docker_image_build": "verified_on_Portainer_0.2.1",
+  "docker_container_start": "verified_on_Portainer_0.2.1",
   "outgoing_notifications": false,
   "missing_report_monitoring": false,
   "portainer_password_configuration": "environment password and explicit file priority tested",
-  "recognition": "Régressions sur les familles observées, y compris les formats supplémentaires révélés par l’audit des 3048 messages ; dix exemples privés vérifiés",
-  "report": "Bilan de 24 heures, répétitions regroupées, réussites masquées, anciens incidents séparés"
+  "recognition": "Familles observées lors de l’audit complet ; tests supplémentaires sur les agents de sauvegarde déconnectés, rapports de démonstration et CVE intégrées au corps du message",
+  "report": "Bilan de 24 heures, répétitions regroupées, réussites masquées, anciens incidents séparés",
+  "server_audit": {
+    "version": "0.2.1",
+    "total_messages": 3048,
+    "unrecognized_messages": 0,
+    "pending": 0,
+    "mailbox_mode": "read_only"
+  }
 }
