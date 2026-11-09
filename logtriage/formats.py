@@ -97,6 +97,8 @@ def classify(subject, sender, text, plain, html, rules):
     host = origin(subject, text)
     clean_subject = re.sub(r"^(?:\[[^\]]+\]\s*)+", "", subject)
     nclean = norm(clean_subject)
+    if ns.startswith("[test]") and any(s in nt for s in ("donnees fictives", "sont fictives", "ceci est un test")):
+        return result("explicit-test-report", "information", "Rapport de démonstration explicitement identifié comme fictif.", evidence=[subject])
     if "wazuh notification" in ns:
         return native_wazuh(subject, plain or html, rules["wazuh"])
     pve = pve_backup(subject, plain or html)
@@ -212,7 +214,7 @@ def classify(subject, sender, text, plain, html, rules):
         failed = "run failed:" in ns
         return result("github-actions", "echec" if failed else "reussite_signalee", f"{repo} : {name} sur {branch}, " + ("échec." if failed else "réussite."),
                       key("github-actions", repo, name, branch), "failure" if failed else "success", [subject])
-    if "proxmox quotidien" in ns:
+    if "proxmox quotidien" in ns or "rapport journalier proxmox" in nt:
         problem_rows = [line.strip() for line in text.splitlines()
                         if re.search(r"\|\s*(?:WARNINGS\s*:\s*[1-9]\d*|ERROR[^|]*|FAILED[^|]*)\s*\|", line, re.I)]
         note = re.search(r"(\d+)\s+tâche\(s\) PBS terminée\(s\) avec un statut différent de OK", text, re.I)
@@ -246,6 +248,13 @@ def classify(subject, sender, text, plain, html, rules):
         failed = "echoue" in ns or "failed" in ns
         return result("synology-restore", "reussite_signalee" if success else "echec" if failed else "fin_annoncee", clean_subject,
                       key("synology-restore", host), "success" if success else "failure" if failed else "completed", [subject])
+    if "active backup for business" in ns and ("deconnecte" in ns or "reconnecte" in ns):
+        endpoint = re.search(r"(?:serveur physique|ordinateur|machine virtuelle)\s+(.+?)\s+(?:s'est|est)\s+(?:déconnecté|reconnecté)", subject, re.I)
+        endpoint = endpoint[1] if endpoint else "inconnu"
+        disconnected = "deconnecte" in ns
+        return result("synology-abb-connectivity", "avertissement" if disconnected else "information",
+                      f"{host} : agent Active Backup de {endpoint} " + ("déconnecté ; sauvegardes à vérifier." if disconnected else "reconnecté."),
+                      key("synology-abb-connectivity", host, endpoint), "warning" if disconnected else "success", [subject])
     if "snmp" in ns and any(s in nt for s in ("non autorise", "unauthorized")):
         target = line_field(text, "Nom") or host
         ip = re.search(r"(?:a partir de|from)\s+(\d+\.\d+\.\d+\.\d+)", norm(text))
@@ -275,9 +284,9 @@ def classify(subject, sender, text, plain, html, rules):
     if any(s in ns for s in ("nouvelle connexion", "nouveau comportement de connexion", "modification obligatoire de votre mot de passe", "please verify your device")):
         return result("account-security-notice", "avertissement", clean_subject,
                       key("account-security", host, re.sub(r"\d+", "#", nclean)), "warning", [subject])
-    if "rapport mensuel" in ns and "disques" in ns or "monthly drive health report" in ns:
-        healthy = "aucun probleme detecte" in nt or "no problems detected" in nt or bool(re.search(r"[–—-]\s*Healthy\s*$", subject, re.I))
-        unhealthy = any(s in nt for s in ("degrade", "defaillant", "secteurs defectueux")) and not healthy
+    if ("rapport mensuel" in ns and "disques" in ns) or "monthly drive health report" in ns:
+        unhealthy = any(s in nt for s in ("degrade", "defaillant", "secteurs defectueux"))
+        healthy = not unhealthy and ("aucun probleme detecte" in nt or "no problems detected" in nt or "no problem detected" in nt or bool(re.search(r"[–—-]\s*(?:Healthy|Sain)\s*$", subject, re.I)))
         return result("synology-disk-health", "avertissement" if unhealthy else "information" if healthy else "a_verifier",
                       f"{host} : " + ("santé des disques à vérifier." if unhealthy or not healthy else "aucun problème de disque signalé."),
                       key("synology-disks", host), "warning" if unhealthy else "success" if healthy else "completed", [subject])
