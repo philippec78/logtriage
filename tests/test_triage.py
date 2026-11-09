@@ -201,6 +201,8 @@ class ReadOnlyIMAPTests(unittest.TestCase):
                     return "OK", [b"42"]
                 if command == "FETCH" and args[1] == "(RFC822.SIZE INTERNALDATE)":
                     return "OK", [f"1 (RFC822.SIZE {len(raw)})".encode()]
+                if command == "FETCH" and args[1] == "(UID INTERNALDATE)":
+                    return "OK", [b'1 (UID 42 INTERNALDATE "09-Nov-2026 07:00:00 +0100")']
                 if command == "FETCH" and args[1] == "(UID BODY.PEEK[])":
                     return "OK", [(b"1 (UID 42 BODY[])", raw), b")"]
                 raise AssertionError("Commande IMAP non autorisée : " + command)
@@ -210,6 +212,8 @@ class ReadOnlyIMAPTests(unittest.TestCase):
             try:
                 self.assertEqual(poll(cfg, store, load_rules(), FakeIMAP)["new"], 1)
                 self.assertEqual(poll(cfg, store, load_rules(), FakeIMAP)["new"], 0)
+                saved = json.loads(store.db.execute("SELECT result FROM messages").fetchone()[0])
+                self.assertEqual(saved["received_at"], "2026-11-09T06:00:00+00:00")
                 FakeIMAP.validity = b"456"
                 self.assertEqual(poll(cfg, store, load_rules(), FakeIMAP)["duplicate"], 1)
                 self.assertEqual(store.export()["total_messages"], 1)

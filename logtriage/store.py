@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .calendar_suggestions import suggestions
+from .dashboard import checks
 from .digest import day_messages, derive_state, render_digest
 from .user_rules import apply_rules
 from .monitoring import identity, policy, reliable, schedule_events, task_options
@@ -152,7 +154,11 @@ class Store:
                    "outgoing_notifications_enabled": False}
         atomic_json(export / "messages.json", messages)
         atomic_json(export / "tasks.json", list(tasks.values()))
-        atomic_json(export / "monitor-options.json", task_options(tasks.values()))
+        options = task_options(tasks.values())
+        atomic_json(export / "monitor-options.json", options)
+        atomic_json(export / "calendar-suggestions.json", suggestions(messages, options, status.get("scope"), moment, tz))
+        atomic_json(export / "checks.json", {"day": summary["report_day"],
+                    "items": checks(tasks.values(), state_events, moment, tz)})
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})

@@ -32,6 +32,43 @@ def mailbox_scope(config):
         f"{config.host.lower()}:{config.port}|{config.user}|{config.folder}".encode()).hexdigest()[:24]
 
 
+def receipt_date(metadata):
+    match = re.search(rb'INTERNALDATE "([^"]+)"', metadata, re.I)
+    if match:
+        try:
+            stamp = parsedate_to_datetime(match[1].decode("ascii").strip().replace("-", " ", 2))
+            if stamp.tzinfo is not None:
+                return stamp.astimezone(timezone.utc).isoformat()
+        except (UnicodeError, ValueError, OverflowError):
+            pass
+    return None
+
+
+def complete_receipt_dates(client, store, scope, references):
+    # Seuls les UID de la boîte et de l'UIDVALIDITY courants sont réutilisables.
+    missing = dict(store.db.execute(
+        "SELECT r.ref, r.sha FROM refs r JOIN messages m ON r.scope=m.scope AND r.sha=m.sha "
+        "WHERE m.scope=? AND json_extract(m.result, '$.received_at') IS NULL", (scope,)))
+    ids = {uid: missing[ref] for uid, ref in references if ref in missing}
+    uids = list(ids)[:4096]
+    for start in range(0, len(uids), 128):
+        batch = uids[start:start + 128]
+        status, rows = client.uid("FETCH", b",".join(batch), "(UID INTERNALDATE)")
+        if status != "OK":
+            break
+        updates = []
+        for metadata in rows or []:
+            if not isinstance(metadata, bytes):
+                continue
+            uid = re.search(rb"\bUID (\d+)\b", metadata, re.I)
+            stamp = receipt_date(metadata)
+            if uid and uid[1] in batch and stamp:
+                updates.append((stamp, scope, ids[uid[1]]))
+        with store.db:
+            store.db.executemany("UPDATE messages SET result=json_set(result, '$.received_at', ?) "
+                                 "WHERE scope=? AND sha=? AND json_extract(result, '$.received_at') IS NULL", updates)
+
+
 def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
     scope = mailbox_scope(config)
     stats = {"new": 0, "duplicate": 0, "pending": 0, "skipped": [], "failures": []}
@@ -55,6 +92,7 @@ def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
         uids = data[0].split()
         pending = [(uid, f"{scope}|{config.folder}|{uidvalidity}|{uid.decode('ascii')}")
                    for uid in uids if re.fullmatch(rb"\d+", uid)]
+        complete_receipt_dates(client, store, scope, pending)
         revision = rules_revision(rules)
         body_rules = [r for r in policy(store.directory)["rules"] if r["scope"] == scope and r["field"] == "body"]
         body_version = body_revision(body_rules) if body_rules else None
@@ -88,10 +126,9 @@ def poll(config, store, rules, factory=imaplib.IMAP4_SSL):
                     sample = extract_sample(raw, result)
                     result["body_matches"] = matched_body(body_rules, {**result, "scope": scope}, sample)
                     result["body_revision"] = body_version
-                internal = re.search(rb'INTERNALDATE "([^"]+)"', raw_metadata)
-                if internal:
-                    stamp = parsedate_to_datetime(internal[1].decode("ascii").replace("-", " ", 2))
-                    result["received_at"] = stamp.astimezone(timezone.utc).isoformat()
+                stamp = receipt_date(raw_metadata)
+                if stamp:
+                    result["received_at"] = stamp
                 inserted = store.put(reference, scope, result)
                 stats["new" if inserted else "duplicate"] += 1
             except (ValueError, TypeError, LookupError):

@@ -25,3 +25,95 @@
 #schedule-days {display:flex;flex-wrap:wrap;gap:1rem}
 #rule-source {margin-bottom:1rem}
 #rule-result {overflow-wrap:anywhere}
+
+/* Vue de supervision : les mêmes couleurs désignent les états sur toutes les vues. */
+:root {
+  --bg:#f2f5f8; --surface:#fff; --text:#172c3b; --muted:#526776; --line:#cfd9e0;
+  --primary:#115b98; --primary-hover:#104c7c; --focus:#1877bb;
+  --good:#087745; --warn:#9a5a00; --bad:#be3739; --other:#647782; --strip:#eaf0f5;
+  font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+header {background:#172f44;border:0;min-height:58px;gap:32px}
+header .brand {color:white;display:inline-flex;align-items:center;gap:10px;letter-spacing:-.03em;font-size:1.35rem}
+.brand-mark {display:inline-block;width:20px;height:20px;border:2px solid #80c6ef;border-radius:4px;position:relative}
+.brand-mark::before {content:"";position:absolute;left:3px;top:3px;width:9px;height:5px;border-left:2px solid white;border-bottom:2px solid white;transform:rotate(-45deg)}
+header nav {gap:0}
+header nav a {padding:0 16px;color:#c9d9e5;border-bottom-width:3px}
+header nav a[aria-current=page],header nav a:hover {background:#223f56;color:white;border-bottom-color:#78c9ff}
+header button.quiet {color:white}
+header button.quiet:hover {background:#294961}
+main {padding-top:26px}
+h1 {font-size:1.8rem;letter-spacing:-.035em}
+.page-heading {margin-bottom:19px;align-items:center}
+.page-heading p {font-size:.9rem}
+.panel,.report-layout,#view-reglages>form,.login {
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px;margin-bottom:20px;
+}
+.login {margin:12vh auto}
+.overview-grid {display:grid;grid-template-columns:minmax(300px,.85fr) minmax(0,1.5fr);gap:18px;align-items:stretch}
+.overview h2,.checks-head h2,#incident-heading,#proposals-title {font-size:1.15rem}
+.status-totals {display:flex;gap:clamp(8px,2vw,26px);align-items:flex-start;justify-content:space-around;margin:21px 0}
+.total {display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:transparent!important;padding:0;min-width:0;color:var(--text)}
+.good {--state:var(--good)}
+.warn {--state:var(--warn)}
+.bad {--state:var(--bad)}
+.other {--state:var(--other)}
+.total strong {border-radius:50%;background:var(--state);color:white;width:clamp(52px,6vw,78px);aspect-ratio:1;display:grid;place-items:center;font-size:1.55rem;font-variant-numeric:tabular-nums}
+.total span {font-size:.85rem}
+.total:hover span {text-decoration:underline}
+.overview .summary {display:grid;grid-template-columns:1fr;gap:5px;margin:14px 0 0;padding:10px 0 0;border-bottom:0}
+.overview .summary div {display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.overview .summary dd {font-size:.94rem;font-weight:600;margin:0}
+#incident-panel {padding:17px 20px;margin-bottom:20px;border:1px solid var(--line)}
+#incident-panel p {font-size:.87rem;margin:6px 0;color:var(--muted)}
+#incident-list {max-height:12rem;margin:9px 0}
+#incident-list label {align-items:baseline;padding:6px 4px;gap:9px;font-size:.92rem}
+#incident-list label::before {content:"";width:9px;height:9px;border-radius:50%;flex:none;background:var(--warn)}
+#incident-list [data-kind=bad] label::before {background:var(--bad)}
+#incident-list small {font-size:.8rem}
+#resolve-incident {min-height:36px;padding:5px 12px}
+.checks-head,.check-filters {display:flex;justify-content:space-between;align-items:end;gap:14px}
+.checks-head {margin:0 0 16px}
+.check-filters label {font-size:.8rem;margin:0;color:var(--muted)}
+.check-filters input,.check-filters select {display:block;margin-top:2px;font-size:.9rem;min-height:36px;padding:5px 9px}
+.check-group {border-top:1px solid var(--line)}
+.check-group summary {background:var(--strip);padding:8px 12px;cursor:pointer;color:var(--primary);overflow-wrap:anywhere}
+.check-group summary small {color:var(--muted);margin-left:12px}
+.check-table {width:100%;border-collapse:collapse;text-align:left;font-size:.85rem;table-layout:fixed}
+.check-table th,.check-table td {padding:6px 10px;overflow-wrap:anywhere;border-bottom:1px solid var(--line)}
+.check-table th {font-weight:500;color:var(--muted)}
+.check-table th:first-child {width:55%}
+.state-label {display:inline-flex;align-items:center;gap:5px;font-size:.76rem;font-weight:600;margin-right:9px}
+.state-label::before,.signal {content:"";width:9px;height:9px;display:inline-block;border-radius:50%;background:var(--state)}
+.signal {margin-right:3px}
+.report-text {max-width:none}
+#view-reglages>form>fieldset:last-of-type {margin-bottom:14px}
+#view-reglages>form>fieldset:first-of-type {border:0;padding-top:6px}
+.proposal-list {list-style:none;padding:0;max-height:24rem;overflow:auto;margin:14px 0}
+.proposal-list li {border-top:1px solid var(--line)}
+.proposal-list label {display:flex;align-items:center;gap:12px;padding:8px 4px;margin:0;cursor:pointer;overflow-wrap:anywhere}
+.proposal-list label:hover,#incident-list label:hover {background:var(--strip)}
+.proposal-list small {display:block;font-weight:400;color:var(--muted);font-size:.8rem}
+.schedule-value {margin-left:auto;text-align:right;font-size:.88rem;font-variant-numeric:tabular-nums}
+#proposal-status:empty,#pending-total:empty {display:none}
+@media(max-width:800px) {
+  .overview-grid {grid-template-columns:minmax(0,1fr);gap:0}
+  .checks-head {align-items:start;flex-direction:column}
+  .check-filters {width:100%;align-items:stretch}
+  .check-filters label {flex:1;min-width:0}
+  .panel,.report-layout,#view-reglages>form,#incident-panel {padding:14px}
+  header nav a {padding:0 9px}
+  .proposal-list label {display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px}
+  .proposal-list input {grid-row:span 2}
+  .schedule-value {grid-column:2;margin-left:0;text-align:left}
+}
+@media(max-width:500px) {
+  .check-table th:first-child {width:47%}
+  .check-table th,.check-table td {padding:5px 3px}
+  .state-label {display:flex}
+  .signal {width:7px;height:7px}
+}
+@media(prefers-color-scheme:dark) {
+  :root {--bg:#121c24;--surface:#1a2833;--text:#e7eef4;--muted:#b4c2ce;--line:#394d5a;--strip:#263a49;--primary:#8ccaf4;--primary-hover:#a6d9fb;--focus:#8acfff;--other:#91a3b0}
+  .signal,.state-label::before,#incident-list label::before {filter:brightness(1.45)}
+}

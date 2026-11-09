@@ -73,6 +73,7 @@ function renderIncidents(rows) {
       detail.textContent = (row.severity === 'open' ? 'Échec' : 'Avertissement') + ' · Dernier signal le ' + date(row.date);
       text.append(detail);
       label.append(checkbox, text);
+      item.dataset.kind = row.severity === "open" ? "bad" : "warn";
       item.append(label);
       fragment.append(item);
     }
@@ -96,6 +97,7 @@ function render(state) {
   $('unknown-count').textContent=state.summary?.today_unknown ?? '—'; $('last-collection').textContent=date(state.status?.last_cycle_at);
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
   renderIncidents(state.incidents || []);
+  renderChecks(state.checks || []);
   settings(state);
   renderMonitoring(state);
   const preview=state.report.preview, job=state.report.job, running=job.state==='running';
@@ -177,6 +179,125 @@ function button(text, callback) {
   el.addEventListener('click', () => callback(el));
   return el;
 }
+const checkLabels = {good:'Sans incident', warn:'Avertissements', bad:'Échecs', other:'À confirmer'};
+const executionLabels = {success:'Réussite', failure:'Échec', warning:'Avertissement', completed:'Fin annoncée', unknown:'À confirmer'};
+function checkKind(row) {
+  if (row.state === 'open') return 'bad';
+  if (row.state === 'warning') return 'warn';
+  if (row.state === 'ok' || row.state === 'resolved') return 'good';
+  return 'other';
+}
+function element(tag, name, text) {
+  const node = document.createElement(tag);
+  if (name) node.className = name;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function renderChecks(rows) {
+  const counts = {good:0, warn:0, bad:0, other:0};
+  rows.forEach(row => counts[checkKind(row)]++);
+  const totals = $('status-totals');
+  if (totals.dataset.counts !== JSON.stringify(counts)) {
+    totals.dataset.counts = JSON.stringify(counts);
+    totals.replaceChildren(...['good','warn','bad'].map(kind => {
+      const count = button('', () => {
+        $('check-status').value = kind;
+        renderChecks(current.checks || []);
+        $('check-status').focus();
+      });
+      count.className = 'total ' + kind;
+      count.append(element('strong','',counts[kind]),element('span','',checkLabels[kind]));
+      return count;
+    }));
+    $('pending-total').textContent = counts.other ? counts.other+' contrôle(s) au résultat à confirmer' : '';
+  }
+  const query = $('check-search').value.toLocaleLowerCase('fr').trim();
+  const filter = $('check-status').value;
+  const list = $('check-groups');
+  const matching = rows.filter(r => (!filter || checkKind(r) === filter) &&
+    (r.host+' '+r.name).toLocaleLowerCase('fr').includes(query));
+  const signature = JSON.stringify([query,filter,matching]);
+  if (list.dataset.rows === signature) return;
+  const opened = new Set(Array.from(list.querySelectorAll('details[open]'), d => d.dataset.host));
+  const first = !list.dataset.rows;
+  list.dataset.rows = signature;
+  const groups = new Map();
+  for (const row of matching) {
+    if (!groups.has(row.host)) groups.set(row.host, []);
+    groups.get(row.host).push(row);
+  }
+  const fragment = document.createDocumentFragment();
+  for (const [host, checks] of groups) {
+    const group = element('details','check-group');
+    group.dataset.host = host;
+    group.open = Boolean(query) || Boolean(filter) || opened.has(host) || (first && !fragment.childNodes.length);
+    const headline = element('summary','');
+    headline.append(element('strong','',host),element('small','',checks.length+' contrôle'+(checks.length>1?'s':'')));
+    const table = element('table','check-table');
+    table.setAttribute('aria-label', 'Contrôles de '+host);
+    const head = table.createTHead().insertRow();
+    for (const title of ['Contrôle','Dernier signal','Historique du jour']) {
+      const th = element('th','',title); th.scope='col'; head.append(th);
+    }
+    const body = table.createTBody();
+    for (const row of checks) {
+      const tr = body.insertRow(), name = tr.insertCell(), kind = checkKind(row);
+      const label = row.missing && row.state === 'warning' ? 'En retard' :
+        ({good:'Sans incident',warn:'Avertissement',bad:'Échec',other:'À confirmer'})[kind];
+      name.append(element('span','state-label '+kind,label),document.createTextNode(row.name));
+      tr.insertCell().textContent = date(row.date);
+      const history = tr.insertCell();
+      for (const [stamp,event] of row.history) {
+        const dot = element('span','signal '+(({success:'good',failure:'bad',warning:'warn'})[event] || 'other'));
+        dot.title = date(stamp)+' · '+(executionLabels[event] || 'À confirmer');
+        dot.setAttribute('role','img');
+        dot.setAttribute('aria-label',dot.title);
+        history.append(dot);
+      }
+      if (!row.history.length) history.textContent = '—';
+    }
+    group.append(headline,table);
+    fragment.append(group);
+  }
+  if (!matching.length) fragment.append(element('p','muted', rows.length ? 'Aucun contrôle ne correspond au filtre.' : 'Aucun contrôle à afficher pour le moment.'));
+  list.replaceChildren(fragment);
+}
+$('check-search').addEventListener('input', () => renderChecks(current?.checks || []));
+$('check-status').addEventListener('change', () => renderChecks(current?.checks || []));
+function selectedCalendars() {
+  return Array.from($('proposal-list').querySelectorAll(':checked'), input => input.value);
+}
+function updateProposalButton() {
+  const count = selectedCalendars().length;
+  $('activate-calendars').disabled = busy || !count;
+  $('activate-calendars').textContent = count ? 'Activer la sélection ('+count+')' : 'Activer la sélection';
+}
+function renderProposals(rows) {
+  const selected = new Set(selectedCalendars());
+  renderPolicyList('proposal-list', rows, row => {
+    const li = element('li',''), label = element('label','');
+    const tick = document.createElement('input');
+    tick.type='checkbox'; tick.value=row.token; tick.checked=selected.has(row.token);
+    const title = element('span','',row.label);
+    title.append(element('small','',row.observed+' jours observés sur '+row.expected+' attendus'+
+      (row.header_dates ? ' · date déclarée utilisée pour '+row.header_dates+' jour(s)' : '')));
+    label.append(tick,title,element('span','schedule-value',row.days.map(d=>weekdays[d]).join(' · ')+' à '+row.time));
+    li.append(label);
+    return li;
+  });
+  $('proposal-empty').hidden=rows.length>0;
+  updateProposalButton();
+}
+$('proposal-list').addEventListener('change',updateProposalButton);
+$('activate-calendars').addEventListener('click', () => {
+  const tokens = selectedCalendars();
+  if (!tokens.length) return;
+  action($('activate-calendars'), async () => {
+    await api('/api/schedules/activate',{tokens});
+    $('proposal-status').textContent = tokens.length+' calendrier'+(tokens.length>1?'s activés.':' activé.');
+  });
+});
+
 function loadSchedule(row) {
   $('scheduled-task').value = row.id;
   $('schedule-time').value = row.time;
@@ -185,6 +306,7 @@ function loadSchedule(row) {
 function renderMonitoring(state) {
   const data = state.monitoring;
   if (!data) return;
+  renderProposals(data.suggestions || []);
   options($('scheduled-task'), data.tasks, $('scheduled-task').value, 'Choisis une tâche');
   const list = (rows, target, section) => renderPolicyList(target, rows, row => {
     const li = document.createElement('li');

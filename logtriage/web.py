@@ -25,6 +25,7 @@ from .openai_http import OpenAIError
 from .private import private_dir, read_json, write_private
 from .settings import load_settings, save_settings
 from .store import Store, current_bilan
+from .calendar_suggestions import activate_suggestions
 from .monitoring import policy, change, schedule
 from .user_rules import activate, simulate
 from .web_reports import WebReports, error_message
@@ -153,7 +154,13 @@ class WebApplication:
         summary, bilan = current_bilan(self.directory, datetime.now(timezone.utc), os.environ.get("TZ", "Europe/Zurich"), settings)
         catalog = read_json(self.directory / "exports/rule-options.json", {})
         monitoring = policy(self.directory)
-        return {"monitoring": {"schedules": monitoring["schedules"],
+        active = {row["id"] for row in monitoring["schedules"]}
+        checks = read_json(self.directory / "exports/checks.json", {})
+        same_day = checks.get("day") == summary.get("report_day")
+        rows = [r if same_day else {**r, "history": []} for r in checks.get("items", [])
+                if (same_day or r["state"] in ("open", "warning")) and (not r["missing"] or summary.get("monitoring_available"))]
+        return {"checks": rows, "monitoring": {"schedules": monitoring["schedules"],
+                "suggestions": [r for r in read_json(self.directory / "exports/calendar-suggestions.json", []) if r["id"] not in active],
                 "rules": [{k: v for k, v in r.items() if k != "examples"} for r in monitoring["rules"]],
                 "tasks": read_json(self.directory / "exports/monitor-options.json", []),
                 "unknown": catalog.get("items", []) if catalog.get("day") == summary.get("report_day") else []},
@@ -268,8 +275,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.reply(200, {"ok": True})
             if path == "/api/rules/test":
                 return self.reply(200, simulate(self.app.directory, values))
-            if path in ("/api/schedules/save", "/api/schedules/remove", "/api/rules/activate", "/api/rules/remove"):
-                if path == "/api/schedules/save":
+            if path in ("/api/schedules/activate", "/api/schedules/save", "/api/schedules/remove", "/api/rules/activate", "/api/rules/remove"):
+                if path == "/api/schedules/activate":
+                    activate_suggestions(self.app.directory, values.get("tokens"))
+                elif path == "/api/schedules/save":
                     schedule(self.app.directory, values)
                 elif path == "/api/rules/activate":
                     activate(self.app.directory, values.get("token"))
