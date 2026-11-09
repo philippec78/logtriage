@@ -89,7 +89,7 @@ def run_cycle(config, store, rules):
               "mode": "read_only", "state": "error"}
     try:
         stats = poll(config, store, rules)
-        summary = store.export(os.environ.get("TZ", "Europe/Zurich"))
+        summary = store.export(os.environ.get("TZ", "Europe/Zurich"), rules.get("report"))
         status.update(last_cycle_at=now(), last_success_at=now(),
                       state="degraded" if stats["failures"] or stats["skipped"] else "ok",
                       collection=stats, summary=summary)
@@ -101,7 +101,7 @@ def run_cycle(config, store, rules):
         status["error_type"] = type(exc).__name__
         LOG.error("Collecte impossible (%s). Vérifie la connexion et la configuration.", type(exc).__name__)
         # Les résultats des messages déjà importés restent consultables.
-        store.export(os.environ.get("TZ", "Europe/Zurich"))
+        store.export(os.environ.get("TZ", "Europe/Zurich"), rules.get("report"))
     atomic_json(store.directory / "status.json", status)
     return status["state"] == "ok"
 
@@ -149,7 +149,10 @@ def main(argv=None):
         LOG.info("Démarrage en lecture seule : collecte toutes les %s secondes, aucun envoi.", config.interval)
         while not stop.is_set():
             run_cycle(config, store, rules)
-            stop.wait(config.interval)
+            status = json.loads((store.directory / "status.json").read_text())
+            # Vider l'import et les réanalyses par lots, puis reprendre le rythme normal.
+            pending = status.get("collection", {}).get("pending", 0)
+            stop.wait(min(5, config.interval) if status["state"] == "ok" and pending else config.interval)
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
         LOG.error("Configuration ou fichier invalide (%s). Consulte le guide de démarrage.", type(exc).__name__)
