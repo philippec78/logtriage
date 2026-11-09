@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 15,
-    "passed": 15,
+    "executed": 32,
+    "passed": 32,
     "real_imap_connection": false
   },
   "sample": {
@@ -23,5 +23,7 @@
   "docker_container_start": "not_run_docker_unavailable",
   "outgoing_notifications": false,
   "missing_report_monitoring": false,
-  "portainer_password_configuration": "environment password and explicit file priority tested"
+  "portainer_password_configuration": "environment password and explicit file priority tested",
+  "recognition": "Régressions sur les familles observées et sur les dix exemples privés ; audit intégral de la boîte à vérifier sur le serveur",
+  "report": "Bilan de 24 heures, répétitions regroupées, réussites masquées, anciens incidents séparés"
 }
