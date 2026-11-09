@@ -86,6 +86,8 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("detail", self.request("/api/state")[1]["checks"][0])
         status, mail, _ = self.request(path)
         self.assertEqual(status, 200)
+        incident, = self.request("/api/state")[1]["incidents"]
+        self.assertEqual(self.request("/api/check-detail/" + incident["detail_id"])[1], mail)
         self.assertIn("backup", mail["summary"])
         self.assertIn("État actuel : 127", mail["points"])
         self.assertIn("Durée : 10 minutes", mail["points"])

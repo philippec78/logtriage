@@ -64,6 +64,10 @@
         </form>
         <p id="bulk-status" role="status"></p>
         <div id="check-groups" class="dash-surface"></div>
+        <p class="history-key"><span>7 jours · Aujourd’hui à droite</span>
+          <span><i class="signal good"></i>Sans incident</span><span><i class="signal warn"></i>Avertissement</span>
+          <span><i class="signal bad"></i>Échec</span><span><i class="signal other"></i>À confirmer</span>
+          <span><i class="signal no-signal"></i>Aucun signal</span></p>
       </section>
     </section>
     <section id="view-rapport" class="view" hidden aria-labelledby="rapport-title">
@@ -173,6 +177,7 @@
 </dialog>
 <dialog id="check-detail" aria-labelledby="detail-title">
   <h2 id="detail-title"></h2><p id="detail-context"></p><section aria-labelledby="detail-mail-title"><h3 id="detail-mail-title">Résumé du mail</h3><div id="detail-mail" role="status"></div></section>
+  <section id="incident-analysis" aria-labelledby="analysis-title" hidden><h3 id="analysis-title">Analyse IA</h3><div id="analysis-body" aria-live="polite"></div></section>
   <details id="assign-client" hidden><summary>Attribuer à un client</summary>
     <form id="assignment-form"><label for="assignment-client">Client destinataire</label>
       <select id="assignment-client" required><option value="">Choisis un client</option></select>
@@ -182,8 +187,8 @@
       <button type="button" id="assignment-save" hidden>Appliquer l’attribution</button>
     </form>
   </details>
-  <h3>Signaux du jour</h3>
-  <div id="detail-history"></div><form method="dialog"><button autofocus>Fermer</button></form>
+  <section id="detail-signals"><h3>7 derniers jours</h3><ul id="detail-days"></ul><h3>Signaux du jour</h3><div id="detail-history"></div></section>
+ <form method="dialog"><button autofocus>Fermer</button></form>
 </dialog>
 <dialog id="plan-welcome"><h2>Tu utilises ton abonnement ChatGPT</h2><p>Les analyses demandées dans logtriage utilisent ton abonnement et ses limites. Tu peux gérer l’accès et l’utilisation depuis les réglages ChatGPT.</p><form method="dialog"><button class="primary">Compris</button></form></dialog>
 </body></html>

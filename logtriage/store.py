@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from .calendar_suggestions import suggestions
 from .check_types import check_service, check_type
 from .clients import assign_clients, message_client
-from .dashboard import checks
+from .dashboard import checks, incident_detail_id
 from .digest import day_messages, derive_state, render_digest
 from .user_rules import apply_rules
 from .monitoring import bind_old_schedules, identity, policy, reliable, schedule_events, task_options
@@ -144,7 +144,8 @@ class Store:
         scheduled = schedule_events(config["schedules"], messages, status, moment, tz)
         state_events = messages + scheduled
         resolutions = dict(self.db.execute("SELECT signal,resolved_at FROM resolutions"))
-        tasks, observations = derive_state(state_events, resolutions)
+        closures = {}
+        tasks, observations = derive_state(state_events, resolutions, manual_closures=closures)
         pending_ids = set(signals).difference(resolutions)
         if pending_ids:
             open_tasks = {t["signal_id"]: t for t in tasks.values() if t["state"] in ("open", "warning")}
@@ -155,7 +156,8 @@ class Store:
                 self.db.executemany("INSERT INTO resolutions VALUES (?,?,?,?)",
                                     [(key, open_tasks[key]["scope"], open_tasks[key]["key"], at) for key in pending_ids])
             resolutions.update(dict.fromkeys(pending_ids, at))
-            tasks, observations = derive_state(state_events, resolutions)
+            closures.clear()
+            tasks, observations = derive_state(state_events, resolutions, manual_closures=closures)
         export = self.directory / "exports"
         counts = dict(collections.Counter(m["category"] for m in messages))
         summary = {**daily_counts(messages, moment, tz), "generated_at": moment.isoformat(), "mode": "read_only", "total_messages": len(messages),
@@ -172,14 +174,18 @@ class Store:
         options = task_options(tasks.values())
         atomic_json(export / "monitor-options.json", options)
         atomic_json(export / "calendar-suggestions.json", suggestions(messages, options, status.get("scope"), moment, tz))
-        check_rows = checks(tasks.values(), state_events, moment, tz)
+        check_rows = checks(tasks.values(), state_events, moment, tz, closures)
         details = {row["detail_id"]: row.pop("detail") for row in check_rows}
+        for row in check_rows:
+            detail_id, detail = row.pop("incident_detail_id"), row.pop("incident_detail")
+            if detail_id:
+                details[detail_id] = detail
         atomic_json(export / "check-details.json", details)
         atomic_json(export / "checks.json", {"day": summary["report_day"], "items": check_rows})
         unknown = [{"id": m["sha256"], "scope": m["scope"], "subject": m["subject"], "sender": m["sender"]}
                    for m in reversed(day_messages(messages, moment, tz)) if m.get("recognized") is False]
         atomic_json(export / "rule-options.json", {"day": summary["report_day"], "items": unknown})
-        pending = [{"id": t["signal_id"], "client": t["client"], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "summary": t.get("summary") or t["key"],
+        pending = [{"id": t["signal_id"], "detail_id": incident_detail_id(t), "client": t["client"], "service": check_service(t["key"]), "check_type": check_type(t["key"]), "summary": t.get("summary") or t["key"],
                     "missing": t.get("format") == "missing-report", "severity": t["state"], "date": t["last_problem"]} for t in tasks.values()
                    if t["state"] in ("open", "warning")]
         pending.sort(key=lambda t: t["date"], reverse=True)

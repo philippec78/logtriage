@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import __version__
 from .check_types import check_service
+from .dashboard import history_dates
 from .assignments import client_names, review_assignment
 from .chatgpt import ChatGPT
 from .openai_http import OpenAIError
@@ -162,6 +163,13 @@ class WebApplication:
         same_day = checks.get("day") == summary.get("report_day")
         rows = [r if same_day else {**r, "history": []} for r in checks.get("items", [])
                 if (same_day or r["state"] in ("open", "warning")) and (not r["missing"] or summary.get("monitoring_available"))]
+        if not same_day and rows and summary.get("report_day"):
+            days = history_dates(datetime.fromisoformat(summary["report_day"]).date())
+            for row in rows:
+                previous = dict(row.get("daily_history", []))
+                active = "failure" if row["state"] == "open" else "warning"
+                row["daily_history"] = [[day, previous.get(day, active if day > (checks.get("day") or day) else "none")]
+                                        for day in days]
         account = self.chatgpt.state()
         incidents = [row for row in read_json(self.directory / "exports/open-incidents.json", [])
                      if not row.get("missing") or summary.get("monitoring_available")]

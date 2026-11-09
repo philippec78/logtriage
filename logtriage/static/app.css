@@ -70,6 +70,8 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .overview .summary dt,.overview .summary dd {font-size:.78rem}
 .overview .summary dd {font-weight:600;margin:1px 0 0}
 #incident-panel {padding:0;margin:0;border:0}
+.issue-line {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px}
+.issue-line>.inspect {margin-top:4px}
 #issues-head,#incident-list label {display:grid;grid-template-columns:18px 7.5rem minmax(0,1fr);align-items:baseline;gap:7px}
 #issues-head {font-weight:600;font-size:.76rem;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:4px}
 #issues-head span:first-child {grid-column:2}
@@ -102,7 +104,8 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 .check-host {margin-left:6px;color:var(--muted);font-size:.8rem}
 .check-table td:nth-child(3) {font-variant-numeric:tabular-nums}
 .check-table td:last-child {text-align:right}
-.signal-strip {display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;vertical-align:middle}
+.signal-strip {display:grid;grid-template-columns:repeat(7,minmax(0,10px));gap:3px;align-items:center}
+.signal-strip .signal {width:100%;height:auto;aspect-ratio:1}
 .check-table tr:has(td):hover {background:var(--surface)}
 .inspect {position:relative;width:28px;min-height:26px;padding:0;border:0;background:transparent;color:var(--primary);vertical-align:middle}
 .inspect::before {content:"";position:absolute;top:6px;left:7px;width:8px;height:8px;border:1.7px solid currentColor;border-radius:50%}
@@ -145,7 +148,8 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
   .check-table th,.check-table td {padding:4px 2px}
   #check-groups {padding:4px}
   .check-host {display:block;margin-left:0}
-  .signal-strip {gap:3px}
+  .signal-strip {gap:2px}
+  .check-table thead th:nth-child(4) {width:21%}
   .signal {width:8px;height:8px}
   #issues-head,#incident-list label {grid-template-columns:16px 6.5rem minmax(0,1fr);gap:5px}
 }
@@ -201,3 +205,11 @@ h1 {font-size:1.8rem;letter-spacing:-.035em}
 #bulk-status:empty,#bulk-error:empty {display:none}
 #bulk-dialog {max-width:min(600px,95vw);overflow-wrap:anywhere}
 #bulk-checks {max-height:42vh;overflow:auto;padding-left:1.5rem}
+
+.signal.no-signal {background:transparent;border:1px solid var(--other)}
+#analysis-body blockquote {margin:8px 0;padding-left:12px;border-left:2px solid var(--line)}
+
+#detail-days {list-style:none;padding:0}
+#detail-days .signal {margin-right:8px}
+.history-key {display:flex;flex-wrap:wrap;gap:4px 14px;margin:9px 0;color:var(--muted);font-size:.78rem}
+.history-key .signal {width:8px;height:8px;margin-right:4px}

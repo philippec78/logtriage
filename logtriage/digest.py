@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from .clients import message_client
 
 
-def derive_state(messages, resolutions=None):
+def derive_state(messages, resolutions=None, *, manual_closures=None):
     tasks, observations = {}, {}
     resolutions = resolutions or {}
     ordered = sorted(messages, key=lambda m: (m["date"], m["sha256"]))
@@ -38,6 +38,7 @@ def derive_state(messages, resolutions=None):
                     task["state"] = "open" if execution == "failure" or task["state"] == "open" else "warning"
                     task["active_occurrences"] += 1
                     task["last_problem"] = message["date"]
+                    task["problem_sha256"] = message["sha256"]
                     task["resolved_at"] = None
                     task.pop("resolved_by", None)
                     signals[identity].add(message["sha256"])
@@ -79,6 +80,8 @@ def derive_state(messages, resolutions=None):
                 legacy = json.dumps([task["scope"], task["key"], date, sorted(combined)])
                 closed = resolutions.get(hashlib.sha256(legacy.encode()).hexdigest())
             if closed:
+                if manual_closures is not None:
+                    manual_closures.setdefault(identity, []).append((closed, date))
                 task.update(state="resolved", resolved_at=closed, resolved_by="manual", active_occurrences=0)
     # Garder les identifiants historiques non ambigus pour les lecteurs existants.
     counts = collections.Counter((scope, key) for scope, key, _ in tasks)

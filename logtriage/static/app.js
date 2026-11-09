@@ -53,6 +53,45 @@ function incidentSelection() {
   button.textContent = count ? 'Marquer comme résolu' + (count > 1 ? 's' : '') + ' (' + count + ')' : 'Valider la sélection';
   button.disabled = !count || busy || current?.report?.job?.state === 'running';
 }
+function analysisStatus(analysis) {
+  if (!analysis) return 'L’analyse IA des incidents est désactivée.';
+  const statuses = {pending:'Analyse IA en attente.', error:'Analyse IA différée. Nouvel essai automatique.',
+    configure:'Pour analyser cet incident, connecte ChatGPT et choisis un modèle dans les réglages.'};
+  const reasons = {usage_limit:'Limite ChatGPT atteinte. L’analyse reprendra après un délai.',
+    invalid_analysis:'La réponse IA ou sa citation n’a pas pu être validée. Un nouvel essai est prévu.',
+    login_required:'Reconnecte le compte ChatGPT dans les réglages.', model_unavailable:'Actualise les modèles et choisis un modèle disponible.'};
+  return reasons[analysis.reason] || statuses[analysis.state] || 'Analyse indisponible.';
+}
+function updateIncidentAnalysis(row) {
+  const box = $('analysis-body');
+  const signature = JSON.stringify([row.id, row.analysis]);
+  if (box.dataset.signature === signature) return;
+  box.dataset.signature = signature;
+  const analysis = row.analysis;
+  if (analysis?.state === 'ready') {
+    box.replaceChildren(element('p','',analysis.constat), element('blockquote','',analysis.preuve),
+      element('p','','Vérification proposée : '+analysis.verification));
+  } else {
+    box.textContent = analysisStatus(analysis);
+  }
+}
+function inspectButton(title, open) {
+  const inspect = button('', open);
+  inspect.className = 'inspect';
+  inspect.title = title;
+  inspect.setAttribute('aria-label',title);
+  return inspect;
+}
+function openIncident(row) {
+  $('detail-title').textContent = row.missing ? 'Rapport manquant' : 'Détail de l’incident';
+  $('detail-context').textContent = row.summary+' · '+clientLabel(row.client)+' · '+serviceLabel(row)+' · '+date(row.date);
+  $('detail-signals').hidden = true;
+  $('incident-analysis').hidden = false;
+  $('incident-analysis').dataset.signal = row.id;
+  updateIncidentAnalysis(row);
+  $('check-detail').showModal();
+  showMailDetail(row.detail_id);
+}
 function renderIncidents(rows) {
   const list = $('incident-list');
   const fingerprint = JSON.stringify(rows);
@@ -77,7 +116,10 @@ function renderIncidents(rows) {
       text.prepend(element('span','sr-only',row.severity === 'open' ? 'Échec — ' : 'Avertissement — '));
       label.append(checkbox, when, text);
       item.dataset.kind = row.severity === "open" ? "bad" : "warn";
-      item.append(label);
+      const line = element('div','issue-line');
+      line.append(label, inspectButton('Voir le détail de l’incident · '+clientLabel(row.client)+' · '+row.summary,
+        () => openIncident(row)));
+      item.append(line);
       if (row.analysis?.state === 'ready') {
         const note = element('details','incident-note');
         note.dataset.signal = row.id;
@@ -87,12 +129,7 @@ function renderIncidents(rows) {
           element('p','','Vérification proposée : '+row.analysis.verification));
         item.append(note);
       } else if (row.analysis) {
-        const statuses = {pending:'Analyse IA en attente.', error:'Analyse IA différée. Nouvel essai automatique.',
-          configure:'Pour analyser cet incident, connecte ChatGPT et choisis un modèle dans les réglages.'};
-        const reasons = {usage_limit:'Limite ChatGPT atteinte. L’analyse reprendra après un délai.',
-          invalid_analysis:'La réponse IA ou sa citation n’a pas pu être validée. Un nouvel essai est prévu.',
-          login_required:'Reconnecte le compte ChatGPT dans les réglages.', model_unavailable:'Actualise les modèles et choisis un modèle disponible.'};
-        item.append(element('p','incident-note muted', reasons[row.analysis.reason] || statuses[row.analysis.state]));
+        item.append(element('p','incident-note muted', analysisStatus(row.analysis)));
       }
       fragment.append(item);
     }
@@ -117,6 +154,10 @@ function render(state) {
   showReport($('latest-digest'), state.latest_digest || 'Le bilan apparaîtra après la première collecte.');
   renderRegistry(state.clients || []);
   renderIncidentView(state.incidents || []);
+  if ($('check-detail').open && !$('incident-analysis').hidden) {
+    const incident = state.incidents.find(row => row.id === $('incident-analysis').dataset.signal);
+    if (incident) updateIncidentAnalysis(incident);
+  }
   renderClientView(state);
   settings(state);
   renderMonitoring(state);
@@ -201,6 +242,10 @@ function button(text, callback) {
 }
 const checkLabels = {good:'Sans incident', warn:'Avertissements', bad:'Échecs', other:'À confirmer'};
 const executionLabels = {success:'Réussite', failure:'Échec', warning:'Avertissement', completed:'Fin annoncée', unknown:'À confirmer'};
+const dailyStates = {
+  success:['good','Sans incident'], failure:['bad','Échec ouvert'], warning:['warn','Avertissement ouvert'],
+  unknown:['other','Résultat à confirmer'], none:['no-signal','Aucun signal']
+};
 function checkKind(row) {
   if (row.state === 'open') return 'bad';
   if (row.state === 'warning') return 'warn';
@@ -526,7 +571,7 @@ function renderChecks(rows) {
   const table = element('table','check-table');
   table.setAttribute('aria-labelledby','checks-title');
   const headings = table.createTHead().insertRow();
-  for (const title of ['Tâche / source','Type de contrôle','Dernier signal','Historique du jour','Détails']) {
+  for (const title of ['Tâche / source','Type de contrôle','Dernier signal','7 derniers jours','Détails']) {
     const th = element('th','',title);
     th.scope = 'col';
     headings.append(th);
@@ -570,15 +615,25 @@ function renderChecks(rows) {
       tr.insertCell().textContent = typeLabel(row);
       tr.insertCell().textContent = date(row.date);
       const history = tr.insertCell(), strip = element('span','signal-strip');
-      for (const [stamp,event] of row.history) {
-        const dot = element('span','signal '+(({success:'good',failure:'bad',warning:'warn'})[event] || 'other'));
-        dot.title = date(stamp)+' · '+(executionLabels[event] || 'À confirmer');
+      const days = row.daily_history || [];
+      for (const [day, state] of days) {
+        const [kind, label] = dailyStates[state] || dailyStates.unknown;
+        const dot = element('span','signal '+kind);
+        dot.title = day.split('-').reverse().join('.')+' · '+label;
         dot.setAttribute('role','img');
         dot.setAttribute('aria-label',dot.title);
         strip.append(dot);
       }
-      history.append(row.history.length ? strip : '—');
-      const inspect = button('', () => {
+      history.append(days.length ? strip : 'En attente de collecte');
+      const inspect = inspectButton('Voir les détails de '+row.name+' sur '+row.host, () => {
+        $('detail-days').replaceChildren(...days.map(([day, state]) => {
+          const [kind, label] = dailyStates[state] || dailyStates.unknown;
+          const item = element('li','','');
+          item.append(element('span','signal '+kind),day.split('-').reverse().join('.')+' · '+label);
+          return item;
+        }));
+        $('detail-signals').hidden = false;
+        $('incident-analysis').hidden = true;
         $('detail-title').textContent = row.name;
         $('detail-context').textContent = 'Client : '+clientLabel(row.client)+' · Service : '+serviceLabel(row)+' · Type : '+typeLabel(row)+' · '+row.host+' · '+label+' · '+date(row.date);
         const entries = row.history.map(([stamp,event]) => element('li','',date(stamp)+' · '+(executionLabels[event] || 'À confirmer')));
@@ -588,9 +643,6 @@ function renderChecks(rows) {
         $('check-detail').showModal();
         showMailDetail(row.detail_id);
       });
-      inspect.className = 'inspect';
-      inspect.title = 'Voir les détails de '+row.name+' sur '+row.host;
-      inspect.setAttribute('aria-label',inspect.title);
       tr.insertCell().append(inspect);
     }
   }

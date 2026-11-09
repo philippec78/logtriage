@@ -42,6 +42,35 @@ class ClientTests(unittest.TestCase):
         migrated, _ = derive_state(history, {old:NOW.isoformat()})
         self.assertTrue(all(t['state']=='resolved' for t in migrated.values()))
 
+    def test_daily_states_and_incident_mail_survive_a_later_inconclusive_mail(self):
+        history = [event("one.ch", 8, "failure"), event("two.ch", 0, "success"),
+                   event("one.ch", 0, "completed")]
+        for m in history:
+            m["subject"] = m["task_events"][0]["execution"]
+        tasks, _ = derive_state(history)
+        rows = {r["client"]: r for r in checks(tasks.values(), history, NOW, ZONE)}
+        self.assertEqual(rows["one.ch"]["detail"]["subject"], "completed")
+        self.assertEqual(rows["one.ch"]["incident_detail"]["subject"], "failure")
+        self.assertEqual([state for _, state in rows["one.ch"]["daily_history"]], ["failure"] * 7)
+        self.assertEqual([state for _, state in rows["two.ch"]["daily_history"]], ["none"] * 6 + ["success"])
+        issue = next(t for t in tasks.values() if t["client"] == "one.ch")
+        closures = {}
+        tasks, _ = derive_state(history, {issue["signal_id"]: NOW.isoformat()}, manual_closures=closures)
+        rows = {r["client"]: r for r in checks(tasks.values(), history, NOW, ZONE, closures)}
+        self.assertEqual([state for _, state in rows["one.ch"]["daily_history"]], ["failure"] * 6 + ["success"])
+
+    def test_daily_state_uses_local_midnight_and_last_confirmed_outcome(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from logtriage.dashboard import daily_history, history_dates
+        moment = datetime.fromisoformat("2026-10-26T12:00:00+00:00")
+        signals = [("2026-10-24T21:45:00+00:00", "failure"),  # 23 h 45 le 24
+                   ("2026-10-24T22:15:00+00:00", "warning"),  # 00 h 15 le 25
+                   ("2026-10-25T01:30:00+00:00", "success")]
+        days = history_dates(moment.date())
+        states = daily_history(signals, [], days, ZoneInfo(ZONE), moment.isoformat())
+        self.assertEqual(states[-3:], [["2026-10-24", "failure"], ["2026-10-25", "success"], ["2026-10-26", "none"]])
+
     def test_same_control_keeps_distinct_calendars_and_arrival_times(self):
         from logtriage.calendar_suggestions import suggestions
         from logtriage.monitoring import schedule_events
