@@ -4,7 +4,7 @@ Ce service lit une boîte IMAP dédiée, classe les rapports connus et conserve 
 
 La version 0.2 reconnaît aussi les rapports Proxmox VE/PBS/Mail Gateway, les alertes Wazuh individuelles, les notifications Synology de stockage, instantanés, mises à jour et sécurité, ainsi que les états d’onduleur et les compteurs Kyocera rencontrés dans la boîte. Les messages administratifs et les bulletins sont identifiés séparément.
 
-Le bilan présente les problèmes récents regroupés et les rétablissements confirmés, sans énumérer les réussites habituelles. La période est de 24 heures par défaut. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés séparément ; les détails restent dans les JSON. Un format réellement nouveau ou illisible reste visible comme point à vérifier. La reconnaissance des modèles présents n’est pas une garantie de prise en charge de tous les futurs emails possibles.
+Le bilan présente les problèmes récents regroupés et les rétablissements confirmés, sans énumérer les réussites habituelles. La période est de 24 heures par défaut. Le bilan nomme aussi chaque ancienne tâche encore en échec ou en avertissement et indique la date de son dernier signal. La rubrique « Rétablis » couvre toujours les dernières 24 heures. Elle utilise la première réussite confirmée après le problème de la même tâche. Les réussites suivantes conservent cette date. Un format réellement nouveau ou illisible reste visible comme point à vérifier. La reconnaissance des modèles présents n’est pas une garantie de prise en charge de tous les futurs emails possibles.
 
 ## Déploiement depuis GitHub dans Portainer
 
@@ -134,7 +134,7 @@ Le dossier `/data/exports` contient :
 | `bilan.txt` | Bilan courant lisible, incluant les tâches encore en échec |
 | `daily/AAAA-MM-JJ.txt` | Dernier bilan disponible pour chaque journée, en heure suisse |
 
-Le bilan est actualisé à chaque collecte. Il affiche les problèmes des dernières 24 heures et les rétablissements récents. Les anciens problèmes sans confirmation de rétablissement sont comptabilisés à part. Les observations de faible sévérité restent dans les exports détaillés. Aucun envoi n’est programmé : tu peux préparer puis envoyer un aperçu depuis la page web, ou utiliser la commande SMTP. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
+Le bilan est actualisé à chaque collecte. Il affiche les problèmes des dernières 24 heures et les rétablissements récents. Les anciens problèmes encore ouverts figurent par nom dans une rubrique dédiée. Les observations de faible sévérité restent dans les exports détaillés. Aucun envoi n’est programmé : tu peux préparer puis envoyer un aperçu depuis la page web, ou utiliser la commande SMTP. Un outil extérieur peut reprendre les JSON ou le bilan texte. La base locale est `/data/history.sqlite3`. Aucun corps d’email intégral ni PDF original n’est conservé dans ce volume ; les preuves sélectionnées et métadonnées peuvent toutefois contenir des noms de machines et des détails techniques.
 
 Les références IMAP incluent une identité de compte hachée, le dossier, UIDVALIDITY et UID. Le Message-ID et l’empreinte SHA-256 sont aussi conservés. Un changement de UIDVALIDITY réimporte les références sans recompter les emails identiques. Deux messages de même Message-ID mais de contenu différent restent distincts. L’état des tâches est recalculé dans l’ordre des dates des emails pour supporter les imports tardifs ; un échec et une réussite à la même seconde maintiennent l’échec ouvert.
 
@@ -180,7 +180,7 @@ Cette commande utilise explicitement l’identifiant et le mot de passe IMAP dé
 
 Ajoute `--preview` pour afficher le contenu sans connexion SMTP. Le rapport utilise les résultats réels déjà disponibles, sans relancer le collecteur ni modifier la boîte. Un import encore partiel ou un bilan ancien est signalé. Une confirmation d’acceptation SMTP est conservée dans `/data/last-report-send.json` ; elle ne prouve pas à elle seule la livraison dans la boîte du destinataire. Aucun envoi quotidien n’est programmé.
 
-Les paramètres `report.window_hours`, `report.max_groups`, `report.disk_warning_percent` et `report.memory_warning_percent` sont définis dans `config/rules.json`. Au-delà du nombre maximal de groupes, un compteur annonce les autres points disponibles dans les exports.
+Les paramètres `report.window_hours`, `report.max_groups`, `report.disk_warning_percent` et `report.memory_warning_percent` sont définis dans `config/rules.json`. La limite réduit les autres points récents. Les tâches encore ouvertes restent nommées même au-delà de cette limite.
 
 ## État du service
 

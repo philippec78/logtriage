@@ -10,11 +10,13 @@ from email.parser import BytesParser
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 
-from . import __version__
+# À modifier quand l'analyse d'un email change. Un changement de présentation
+# du bilan réutilise les événements déjà enregistrés dans la base.
+ANALYSIS_VERSION = "0.3.0"
 
 
 def rules_revision(rules):
-    return hashlib.sha256((__version__ + json.dumps(rules, sort_keys=True)).encode()).hexdigest()
+    return hashlib.sha256((ANALYSIS_VERSION + json.dumps(rules, sort_keys=True)).encode()).hexdigest()
 
 
 def norm(value):

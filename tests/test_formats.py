@@ -168,6 +168,56 @@ class FormatsTests(unittest.TestCase):
 
 
 class DigestTests(unittest.TestCase):
+    def scheduler(self, task, code, day):
+        return parse("[NAS] Le planificateur de tâches a terminé une tâche planifiée",
+                     f"Tâche : {task}\nÉtat actuel : {code}\nDe NAS", day=day)
+
+    def digest(self, messages, now, legacy=False, **config):
+        tasks, observations = derive_state(messages)
+        if legacy:
+            for task in tasks.values():
+                del task["resolved_at"]
+        return render_digest({"total_messages": len(messages)}, messages, list(tasks.values()),
+                             list(observations.values()), config=config, current_time=now)
+
+    def test_old_open_problems_are_named_until_the_same_task_recovers(self):
+        logs = [self.scheduler("archive-A", 1, 5), self.scheduler("archive-B", 1, 6),
+                self.scheduler("archive-A", 0, 9), self.scheduler("archive-C", 1, 7)]
+        now = datetime(2026, 11, 9, 11, tzinfo=timezone.utc)
+        report = self.digest(logs, now, max_groups=1)
+        older = report.split("PROBLÈMES TOUJOURS OUVERTS")[1].split("RÉTABLIS")[0]
+        self.assertIn("archive-B", older)
+        self.assertIn("06.11.2026 à 11:00", older)
+        self.assertIn("archive-C", older)
+        self.assertNotIn("archive-A", older)
+        self.assertIn("archive-A", report.split("RÉTABLIS")[1])
+
+    def test_recovery_window_uses_the_first_success_and_exact_24h_boundary(self):
+        logs = [self.scheduler("archive", 0, 9), self.scheduler("archive", 1, 5),
+                self.scheduler("archive", 0, 8)]
+        boundary = datetime(2026, 11, 9, 10, tzinfo=timezone.utc)
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                self.assertIn("08.11.2026 à 11:00", self.digest(logs, boundary, legacy, window_hours=1))
+                self.assertNotIn("RÉTABLIS", self.digest(logs, boundary + timedelta(seconds=1),
+                                                       legacy, window_hours=72))
+        future = [self.scheduler("archive", 1, 5), self.scheduler("archive", 0, 10)]
+        self.assertNotIn("RÉTABLIS", self.digest(future, boundary))
+
+    def test_only_the_current_episode_can_be_reported_as_recovered(self):
+        logs = [self.scheduler("archive", code, day) for day, code in [(4, 1), (5, 0), (8, 1), (9, 0)]]
+        now = datetime(2026, 11, 9, 11, tzinfo=timezone.utc)
+        self.assertIn("09.11.2026 à 11:00", self.digest(logs, now))
+        logs.append(self.scheduler("archive", 1, 9))
+        self.assertNotIn("RÉTABLIS", self.digest(logs, now))
+
+    def test_recent_open_tasks_stay_named_beyond_display_limit(self):
+        logs = [self.scheduler(name, 1, 9) for name in ("archive-A", "archive-B")]
+        now = datetime(2026, 11, 9, 11, tzinfo=timezone.utc)
+        report = self.digest(logs, now, max_groups=1)
+        self.assertIn("archive-A", report)
+        self.assertIn("archive-B", report)
+
     def test_routine_success_and_resolved_failures_are_not_open_alerts(self):
         failed = parse("[NAS] Le planificateur de tâches a terminé une tâche planifiée", "Tâche : certs\nÉtat actuel : 127\nDe NAS", day=8)
         success = parse("[NAS] Le planificateur de tâches a terminé une tâche planifiée", "Tâche : certs\nÉtat actuel : 0\nDe NAS", day=9)

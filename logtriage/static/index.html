@@ -42,7 +42,7 @@
       <form id="settings-form">
         <fieldset><legend>Bilan et collecte</legend><div class="fields">
           <div><label for="window_hours">Période du bilan</label><select id="window_hours" name="window_hours"><option value="24">Dernières 24 heures</option><option value="48">Dernières 48 heures</option><option value="168">Derniers 7 jours</option><option value="720">Derniers 30 jours</option></select></div>
-          <div><label for="max_groups">Nombre maximal de points affichés</label><input id="max_groups" name="max_groups" type="number" min="1" max="100" required></div>
+          <div><label for="max_groups">Limite des points récents (tâches ouvertes toujours incluses)</label><input id="max_groups" name="max_groups" type="number" min="1" max="100" required></div>
           <div><label for="poll_seconds">Intervalle de collecte, en secondes</label><input id="poll_seconds" name="poll_seconds" type="number" min="30" max="86400" required><p class="hint">Appliqué après le cycle de collecte en cours.</p></div>
           <div><span class="field-label">Boîte consultée</span><p id="mailbox-description" class="read-only"></p><p class="hint">L’accès IMAP reste en lecture seule.</p></div>
         </div></fieldset>

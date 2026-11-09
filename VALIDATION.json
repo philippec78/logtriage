@@ -1,8 +1,8 @@
 {
   "mode": "lecture_seule",
   "tests": {
-    "executed": 55,
-    "passed": 55,
+    "executed": 59,
+    "passed": 59,
     "real_imap_connection": false
   },
   "sample": {
@@ -25,7 +25,7 @@
   "missing_report_monitoring": false,
   "portainer_password_configuration": "environment password and explicit file priority tested",
   "recognition": "Familles observées lors de l’audit complet ; tests supplémentaires sur les agents de sauvegarde déconnectés, rapports de démonstration et CVE intégrées au corps du message",
-  "report": "Bilan de 24 heures, répétitions regroupées, réussites masquées, anciens incidents séparés",
+  "report": "Tâches ouvertes nommées, rétablissement daté à la première réussite et visible pendant 24 heures, y compris avec un export antérieur à 0.3.1",
   "server_audit": {
     "version": "0.2.1",
     "total_messages": 3048,
